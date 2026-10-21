@@ -25,7 +25,6 @@ Structured tables are read deterministically and must prove themselves against t
 - [Project Structure](#project-structure)
 - [Deployment](#deployment)
 - [Configuration](#configuration)
-- [Local Development](#local-development)
 - [Observability](#observability)
 - [Clean Up](#clean-up)
 - [License](#license)
@@ -167,7 +166,7 @@ For a step-by-step walk through one remittance, from upload to CSV or review, se
 ├── observability/                   # Dashboard generator and the generated dashboard definition
 ├── schemas/                         # Versioned contracts: analyzer, results, manifest, intake, assurance
 ├── scripts/                         # Deploy-*.ps1 phases, smoke test, load test, golden-set evaluation
-├── docs/                            # How it works, deployment guides, evaluation
+├── docs/                            # How it works, deployment guides, developer guide, evaluation
 ├── media/                           # Screenshots and diagrams used by the docs
 └── samples/                         # Local-only test messages (git-ignored)
 ```
@@ -193,6 +192,8 @@ Add `-Private -PrivateUi` to deploy into an existing landing-zone VNet with a VP
 | [Deployment Guide](docs/deployment_steps.md) | Prerequisites, settings, the six phases and their parameters, private deployment, verification, troubleshooting, teardown |
 | [Manual Deployment](docs/manual-deployment.md) | Every resource, setting and role assignment, to deploy without the script or adapt it to your landing zone |
 | [infra/README.md](infra/README.md) | Networking, identities and roles, firewall egress |
+| [Developer Guide](docs/developer-guide.md) | For changing the code: tests, and running the Function app, API or UI against a deployed environment |
+| [Golden-Set Evaluation](docs/evaluation.md) | Measuring accuracy on real messages checked by a person |
 
 > **Cost:** the models, Content Understanding, AI Search and the other services are billable. Each run records its own usage and estimated cost.
 
@@ -205,30 +206,6 @@ Add `-Private -PrivateUi` to deploy into an existing landing-zone VNet with a VP
 | Your organization's names and PRO rules | `.env` (git-ignored) → Function app settings. See [Deployment Guide, Step 3](docs/deployment_steps.md#step-3--configure-for-the-customer) |
 | Rates for the per-run cost estimate | [apps/remittance-processor/config/pricing.json](apps/remittance-processor/config/pricing.json): ships with Azure list prices; replace them with your agreement's rates |
 | Deployment options (region, sizes, networking) | `deploy.ps1` parameters. See the [Deployment Guide](docs/deployment_steps.md#optional-parameters) |
-
----
-
-## Local Development
-
-Requirements: Python 3.11+, Azure Functions Core Tools v4, Azurite, Node 20, and a deployed environment for the Azure services.
-
-```powershell
-python -m venv .venv; .\.venv\Scripts\Activate.ps1
-pip install -r apps/remittance-processor/requirements.txt
-Copy-Item apps/remittance-processor/local.settings.example.json apps/remittance-processor/local.settings.json   # then fill in the endpoints
-python scripts/setup_local_storage.py
-Push-Location apps/remittance-processor; func start; Pop-Location
-```
-
-Work arrives only through the intake queue, so submit messages through the API (UI upload, `scripts/Test-Remittance.ps1` or `scripts/load_test.py`).
-
-```powershell
-Push-Location apps/remittance-processor; python -m unittest discover -s tests; Pop-Location   # Function tests
-python -m unittest discover -s apps/api/tests                                                   # API tests
-Push-Location apps/ui; npm install; npm run build; Pop-Location                                  # UI build
-```
-
-To measure accuracy against real messages checked by a person, see [Golden-Set Evaluation](docs/evaluation.md).
 
 ---
 
