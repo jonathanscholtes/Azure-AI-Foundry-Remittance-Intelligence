@@ -1,0 +1,68 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.python_packages/
+local.settings.json
+samples/**
+!samples/README.md
+*.msg
+*.pdf
+*.xlsx
+*.xls
+*.csv
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+# ...except the docs' screenshots and the UI's own images (fictional brand)
+!media/*.png
+!media/*.jpg
+!apps/ui/public/images/*.png
+!apps/ui/public/images/*.jpg
+
+*.eml
+
+# Generated deployment artifacts (e.g. scripts/Deploy-Applications.ps1 -> .generated/apps/apps.parameters.json)
+.generated/
+
+.claude/
+
+# Terraform / Bicep state and locals
+infra/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.*
+infra/**/.terraform.lock.hcl
+*.azd.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node / UI
+node_modules/
+dist/
+.vite/
+*.local
+
+# Environment & secrets
+.env
+*.env
+!*.env.example
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+buildlog.txt
+parselog.txt
+
+design/
+project.md

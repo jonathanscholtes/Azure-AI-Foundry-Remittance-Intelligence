@@ -1,0 +1,2104 @@
+{
+  "title": "ACH Remittance Processing",
+  "uid": "ach-remittance",
+  "description": "Outcomes, cost per message, runs, operations and capacity for ACH remittance processing.",
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "refresh": "",
+  "tags": [
+    "ach-remittance"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "ds",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "grafana-azure-monitor-datasource",
+        "hide": 2
+      },
+      {
+        "name": "payer",
+        "label": "Payer",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-azure-monitor-datasource",
+          "uid": "${ds}"
+        },
+        "includeAll": true,
+        "allValue": "'__all'",
+        "multi": false,
+        "refresh": 2,
+        "sort": 1,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "query": {
+          "refId": "payer",
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table",
+            "query": "traces | where $__timeFilter(timestamp) | where message startswith \"remittance_run_completed \" | extend p = tostring(parse_json(substring(message, 25)).payerName) | where isnotempty(p) | distinct p | order by p asc"
+          }
+        }
+      },
+      {
+        "name": "class",
+        "label": "Message class",
+        "type": "custom",
+        "includeAll": true,
+        "allValue": "'__all'",
+        "multi": false,
+        "query": "A - Body table : A, B - Spreadsheet : B, C - Small document : C, D - Large document : D, none - No lines : none",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "tz",
+        "label": "Business time zone",
+        "type": "custom",
+        "multi": false,
+        "query": "America/New_York,America/Chicago,America/Denver,America/Los_Angeles,UTC",
+        "current": {
+          "text": "America/New_York",
+          "value": "America/New_York"
+        }
+      },
+      {
+        "name": "minutes",
+        "label": "Manual minutes per message",
+        "type": "textbox",
+        "query": "10",
+        "current": {
+          "text": "10",
+          "value": "10"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Outcomes and ROI",
+      "collapsed": false,
+      "panels": [],
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Messages processed",
+      "description": "Emails processed (latest run per email; duplicates excluded).",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages | count",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Straight-through rate",
+      "description": "Share of messages the AI processed end to end - extracted, verified, reconciled and the payment file produced (first pass or AI-resolved).",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages | summarize v = round(100.0 * countif(outcome in (\"handled_by_rules\", \"handled_by_agents\")) / count(), 1)",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 4,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Needs review",
+      "description": "Messages the AI extracted and assessed, held for an analyst's decision with the reason and the ACH Assurance Expert's recommendation.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages | summarize v = countif(outcome == \"flagged_for_review\")",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 4,
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Failed",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages | summarize v = countif(outcome == \"failed\")",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "AI cost (est.)",
+      "description": "Estimated AI cost of every run in the range (reprocessed emails count each run).",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nruns | summarize v = sum(cost)",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 6,
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Cost per message (est.)",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nruns | summarize v = sum(cost) / toscalar(messages | count)",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 4
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 20,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Straight-through, first pass",
+      "description": "Processed end to end on the first pass: extracted (Content Understanding, the ACH Extraction Expert and the table readers as needed), verified against the source, reconciled, payment file produced.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages | summarize v = countif(outcome == \"handled_by_rules\")",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Straight-through, AI-resolved",
+      "description": "Processed end to end after the ACH Resolution Expert reasoned across the sources to recover the lines or a date / reference; its answer was verified against the source before it was applied.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages | summarize v = countif(outcome == \"handled_by_agents\")",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 4,
+        "y": 5,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Payment lines processed",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages | summarize v = sum(lines)",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 10,
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Dollars processed",
+      "description": "Sum of the stated payment totals.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages | summarize v = sum(paymentTotal)",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 11,
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Time saved (est.)",
+      "description": "Straight-through messages (first pass and AI-resolved) x Manual minutes per message (a setting).",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages | summarize v = countif(outcome in (\"handled_by_rules\", \"handled_by_agents\")) * todouble('$minutes') / 60.0",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 12,
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Median processing time",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages | summarize v = percentile(durationMs, 50) / 1000.0",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 13,
+      "gridPos": {
+        "x": 20,
+        "y": 5,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Messages per day by outcome",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages | summarize Messages = count() by day, Outcome = case(outcome == \"handled_by_rules\", \"Straight-through, first pass\", outcome == \"handled_by_agents\", \"Straight-through, AI-resolved\", outcome == \"flagged_for_review\", \"Needs review\", outcome == \"failed\", \"Failed\", outcome == \"duplicate\", \"Duplicate\", outcome) | order by day asc",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "showPoints": "never"
+          },
+          "displayName": "${__field.labels.Outcome}"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Straight-through, first pass"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Straight-through, AI-resolved"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Needs review"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Failed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Duplicate"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 14,
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 16,
+        "h": 8
+      }
+    },
+    {
+      "type": "text",
+      "title": "About these numbers",
+      "options": {
+        "mode": "markdown",
+        "content": "**Straight-through:** the AI processed the remittance end to end - read the email and its attachments, extracted every payment line, verified each line against its source, reconciled to the payment and produced the payment file, ready for cash application. *First pass*: verified on the first extraction. *AI-resolved*: the ACH Resolution Expert reasoned across the sources to recover the lines or details, and its answer was verified before it was applied.\n\n**Time saved (estimate):** straight-through messages x the *Manual minutes per message* setting above, the business's estimate of the manual effort per remittance.\n\n**Costs (estimate):** from each run's recorded AI usage and the configured rates (today Azure list prices, before negotiated discounts, credits or taxes). Azure Cost Management is the billing record."
+      },
+      "id": 15,
+      "gridPos": {
+        "x": 16,
+        "y": 9,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "type": "table",
+      "title": "By payer",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nlet totals = runs | summarize totalCost = sum(cost) by processingId;\nmessages\n| join kind=leftouter totals on processingId\n| summarize Messages = count(), ['Straight-through %'] = round(100.0 * countif(outcome in (\"handled_by_rules\", \"handled_by_agents\")) / count(), 1),\n            ['Needs review'] = countif(outcome == \"flagged_for_review\"), Lines = sum(lines), Dollars = round(sum(paymentTotal), 2),\n            ['AI cost'] = round(sum(totalCost), 4) by Payer = iff(isempty(payer), \"(unknown)\", payer)\n| extend ['Cost per message'] = round(['AI cost'] / Messages, 4)\n| order by Messages desc",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "id": 16,
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 8
+      }
+    },
+    {
+      "type": "row",
+      "title": "Cost and usage",
+      "collapsed": false,
+      "panels": [],
+      "id": 17,
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Estimated AI cost per day by component",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nruns\n| mv-expand bagexpansion=array c = e.costByComponent\n| summarize Cost = sum(todouble(c[1])) by day, Component = tostring(c[0])\n| order by day asc",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 18,
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "table",
+      "title": "Calls and usage",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nruns\n| summarize Runs = count(), ['CU calls'] = sum(toint(e.cuCalls)), ['CU pages'] = sum(toint(e.cuPages)),\n            ['Agent calls'] = sum(toint(e.agentCalls)), ['Decision-1 calls'] = sum(toint(e.decisionCalls)),\n            ['AI tokens'] = sum(tolong(e.aiTokens)), ['Est. cost'] = round(sum(cost), 4)",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "id": 19,
+      "gridPos": {
+        "x": 12,
+        "y": 26,
+        "w": 12,
+        "h": 4
+      }
+    },
+    {
+      "type": "table",
+      "title": "By message class",
+      "description": "How the payment lines were read: A body table and B spreadsheet (code readers, lowest cost), C small document and D large document (Content Understanding; cost grows with lines), none = no lines.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nlet totals = runs | summarize totalCost = sum(cost) by processingId;\nmessages\n| join kind=leftouter totals on processingId\n| summarize Messages = count(), ['Straight-through %'] = round(100.0 * countif(outcome in (\"handled_by_rules\", \"handled_by_agents\")) / count(), 1),\n            Lines = sum(lines), ['AI cost'] = round(sum(totalCost), 4) by Class = case(messageClass == \"A\", \"A - Body table\", messageClass == \"B\", \"B - Spreadsheet\", messageClass == \"C\", \"C - Small document\", messageClass == \"D\", \"D - Large document\", messageClass == \"none\", \"none - No lines\", messageClass)\n| extend ['Cost per message'] = round(['AI cost'] / Messages, 4)\n| order by Class asc",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "id": 20,
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 12,
+        "h": 4
+      }
+    },
+    {
+      "type": "table",
+      "title": "By remittance date",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nlet totals = runs | summarize totalCost = sum(cost) by processingId;\nmessages\n| join kind=leftouter totals on processingId\n| summarize Messages = count(), ['Straight-through %'] = round(100.0 * countif(outcome in (\"handled_by_rules\", \"handled_by_agents\")) / count(), 1),\n            Lines = sum(lines), Dollars = round(sum(paymentTotal), 2), ['AI cost'] = round(sum(totalCost), 4)\n            by ['Remittance date'] = iff(isempty(remittanceDate), \"(none)\", remittanceDate)\n| order by ['Remittance date'] desc",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "id": 21,
+      "gridPos": {
+        "x": 12,
+        "y": 34,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "table",
+      "title": "By calendar date (business time zone)",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nlet totals = runs | summarize totalCost = sum(cost) by processingId;\nmessages\n| join kind=leftouter totals on processingId\n| summarize Messages = count(), ['Straight-through %'] = round(100.0 * countif(outcome in (\"handled_by_rules\", \"handled_by_agents\")) / count(), 1),\n            Lines = sum(lines), ['AI cost'] = round(sum(totalCost), 4) by Day = format_datetime(day, 'yyyy-MM-dd')\n| extend ['Cost per message'] = round(['AI cost'] / Messages, 4)\n| order by Day desc",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "id": 22,
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "row",
+      "title": "Runs",
+      "collapsed": false,
+      "panels": [],
+      "id": 23,
+      "gridPos": {
+        "x": 0,
+        "y": 50,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "table",
+      "title": "Runs (one row per email)",
+      "description": "Latest run per email; Est. cost sums every run of the email. Select a Processing ID to open Run Details.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nlet totals = runs | summarize totalCost = sum(cost), Runs = count() by processingId;\nmessages\n| join kind=leftouter totals on processingId\n| project Processed = timestamp, ['Processing ID'] = processingId, Payer = payer, ['Remittance date'] = remittanceDate,\n          Class = case(messageClass == \"A\", \"A - Body table\", messageClass == \"B\", \"B - Spreadsheet\", messageClass == \"C\", \"C - Small document\", messageClass == \"D\", \"D - Large document\", messageClass == \"none\", \"none - No lines\", messageClass), Outcome = case(outcome == \"handled_by_rules\", \"Straight-through, first pass\", outcome == \"handled_by_agents\", \"Straight-through, AI-resolved\", outcome == \"flagged_for_review\", \"Needs review\", outcome == \"failed\", \"Failed\", outcome == \"duplicate\", \"Duplicate\", outcome), Lines = lines, Payment = paymentTotal,\n          ['CU pages'] = toint(e.cuPages), ['Agent calls'] = toint(e.agentCalls), Tokens = tolong(e.aiTokens),\n          ['Est. cost'] = round(totalCost, 4), Runs, ['Duration (s)'] = round(durationMs / 1000.0, 1)\n| order by Processed desc",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Processing ID"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open Run Details",
+                    "url": "__UI_URL__/runs/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "id": 24,
+      "gridPos": {
+        "x": 0,
+        "y": 51,
+        "w": 24,
+        "h": 10
+      }
+    },
+    {
+      "type": "row",
+      "title": "Operations",
+      "collapsed": false,
+      "panels": [],
+      "id": 25,
+      "gridPos": {
+        "x": 0,
+        "y": 61,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Processing time per day, p50 / p95",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages\n| summarize p50 = percentile(durationMs, 50) / 1000.0, p95 = percentile(durationMs, 95) / 1000.0 by day\n| order by day asc",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "time_series"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 26,
+      "gridPos": {
+        "x": 0,
+        "y": 62,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "table",
+      "title": "Average time per step",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages\n| mv-expand bagexpansion=array s = e.stepDurationsMs\n| summarize ['Average (s)'] = round(avg(todouble(s[1])) / 1000.0, 1), ['p95 (s)'] = round(percentile(todouble(s[1]), 95) / 1000.0, 1)\n            by Step = tostring(s[0])\n| order by ['Average (s)'] desc",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "id": 27,
+      "gridPos": {
+        "x": 12,
+        "y": 62,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "table",
+      "title": "Review reasons",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages\n| where outcome == \"flagged_for_review\"\n| mv-expand reason = e.reviewReasons\n| summarize Messages = count() by Reason = tostring(reason)\n| order by Messages desc",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "id": 28,
+      "gridPos": {
+        "x": 0,
+        "y": 70,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "type": "table",
+      "title": "Failures by stage",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nmessages\n| where outcome == \"failed\"\n| summarize Messages = count() by Stage = tostring(e.stage), Error = tostring(e.errorCode)\n| order by Messages desc",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "id": 29,
+      "gridPos": {
+        "x": 8,
+        "y": 70,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Throttle retries (CU 429 / 5xx)",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nruns | summarize v = sum(toint(e.throttleRetries))",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 30,
+      "gridPos": {
+        "x": 16,
+        "y": 70,
+        "w": 8,
+        "h": 4
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Duplicates skipped",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "let runs = traces\n| where $__timeFilter(timestamp)\n| where message startswith \"remittance_run_completed \"\n| extend e = parse_json(substring(message, 25))\n| summarize arg_max(timestamp, e) by processingId = tostring(e.processingId), runId = tostring(e.runId)\n| extend payer = tostring(e.payerName), messageClass = tostring(e.messageClass), outcome = tostring(e.outcome),\n         lines = toint(e.lineCount), paymentTotal = todouble(e.paymentTotal), cost = todouble(e.estimatedCost),\n         durationMs = toint(e.durationMs), remittanceDate = tostring(e.remittanceDate),\n         day = startofday(datetime_utc_to_local(timestamp, '$tz'))\n| where ${payer:singlequote} == '__all' or payer == ${payer:singlequote}\n| where ${class:singlequote} == '__all' or messageClass == ${class:singlequote};\nlet messages = runs | summarize arg_max(timestamp, *) by processingId | where outcome != \"duplicate\";\nruns | summarize v = countif(outcome == \"duplicate\")",
+            "resources": [
+              "__APPI_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center"
+      },
+      "id": 31,
+      "gridPos": {
+        "x": 0,
+        "y": 78,
+        "w": 8,
+        "h": 4
+      }
+    },
+    {
+      "type": "row",
+      "title": "Capacity (platform metrics)",
+      "collapsed": false,
+      "panels": [],
+      "id": 32,
+      "gridPos": {
+        "x": 0,
+        "y": 82,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Model tokens by deployment",
+      "description": "Input (prompt) and output (generated) tokens per model deployment.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__SUBSCRIPTION_ID__",
+                "resourceGroup": "__RESOURCE_GROUP__",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts",
+                "resourceName": "__FOUNDRY_NAME__",
+                "region": "__REGION__"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "ProcessedPromptTokens",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelDeploymentName",
+                "operator": "eq",
+                "filters": []
+              }
+            ]
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__SUBSCRIPTION_ID__",
+                "resourceGroup": "__RESOURCE_GROUP__",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts",
+                "resourceName": "__FOUNDRY_NAME__",
+                "region": "__REGION__"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "GeneratedTokens",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelDeploymentName",
+                "operator": "eq",
+                "filters": []
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 33,
+      "gridPos": {
+        "x": 0,
+        "y": 83,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Model requests by status code",
+      "description": "429 = throttled (raise TPM or lower concurrency).",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__SUBSCRIPTION_ID__",
+                "resourceGroup": "__RESOURCE_GROUP__",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts",
+                "resourceName": "__FOUNDRY_NAME__",
+                "region": "__REGION__"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "AzureOpenAIRequests",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "dimensionFilters": [
+              {
+                "dimension": "StatusCode",
+                "operator": "eq",
+                "filters": []
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 34,
+      "gridPos": {
+        "x": 12,
+        "y": 83,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Intake queue: active and dead-lettered",
+      "description": "",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${ds}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__SUBSCRIPTION_ID__",
+                "resourceGroup": "__RESOURCE_GROUP__",
+                "metricNamespace": "Microsoft.ServiceBus/namespaces",
+                "resourceName": "__SERVICEBUS_NAME__",
+                "region": "__REGION__"
+              }
+            ],
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "ActiveMessages",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "dimensionFilters": []
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${ds}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "__SUBSCRIPTION_ID__",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "__SUBSCRIPTION_ID__",
+                "resourceGroup": "__RESOURCE_GROUP__",
+                "metricNamespace": "Microsoft.ServiceBus/namespaces",
+                "resourceName": "__SERVICEBUS_NAME__",
+                "region": "__REGION__"
+              }
+            ],
+            "metricNamespace": "Microsoft.ServiceBus/namespaces",
+            "metricName": "DeadletteredMessages",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "dimensionFilters": []
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 35,
+      "gridPos": {
+        "x": 0,
+        "y": 91,
+        "w": 24,
+        "h": 8
+      }
+    }
+  ]
+}

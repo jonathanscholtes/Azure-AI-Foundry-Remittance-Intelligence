@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ach.example/schemas/ach-remittance-v1.json",
+  "title": "ACH Remittance Extraction Contract",
+  "type": "object",
+  "required": ["remittanceMetadata", "paymentLines"],
+  "properties": {
+    "remittanceMetadata": {
+      "type": "object",
+      "required": ["payerName", "remittanceDate", "paymentTotal", "currency", "paymentReference"],
+      "properties": {
+        "payerName": { "type": ["string", "null"] },
+        "remittanceDate": { "type": ["string", "null"], "format": "date" },
+        "paymentTotal": { "type": ["number", "null"] },
+        "currency": { "type": ["string", "null"] },
+        "paymentReference": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "paymentLines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["proInvoiceNumber", "amountPaid"],
+        "properties": {
+          "proInvoiceNumber": { "type": ["string", "null"] },
+          "amountPaid": { "type": ["number", "null"] },
+          "invoiceDate": { "type": ["string", "null"], "format": "date" },
+          "originalInvoiceAmount": { "type": ["number", "null"] },
+          "discountAmount": { "type": ["number", "null"] },
+          "adjustmentAmount": { "type": ["number", "null"] },
+          "lineReference": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

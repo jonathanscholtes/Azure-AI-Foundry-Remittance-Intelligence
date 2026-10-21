@@ -1,0 +1,7 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+azure-identity==1.25.1
+azure-data-tables==12.5.0
+azure-storage-blob==12.26.0
+azure-servicebus==7.14.2
+python-multipart==0.0.17

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "assurance-v1.json",
+  "title": "Assurance recommendation (results/{processingId}/{runId}/assurance.json and finalResult.assurance)",
+  "description": "Fused, advisory output of the gated agent layer for ReviewRequired runs. Never changes extracted amounts, run status, or CSV publication. One finding per triaged issue; the top-level decision/category/rationale mirror the primary finding.",
+  "type": "object",
+  "required": ["gated", "decision", "experts"],
+  "$defs": {
+    "decision": {
+      "enum": [
+        "approve_deduction", "dispute_short_pay", "request_remittance_detail", "hold_overpayment",
+        "confirm_with_payer", "route_to_billing", "manual_review", "verify_extraction", "correct_data"
+      ]
+    },
+    "citation": {
+      "type": "object",
+      "properties": {
+        "expert": { "type": "string" },
+        "policyId": { "type": ["string", "null"] },
+        "title": { "type": ["string", "null"] },
+        "excerpt": { "type": ["string", "null"] },
+        "url": { "type": ["string", "null"] }
+      }
+    }
+  },
+  "properties": {
+    "gated": { "const": true },
+    "gateReasons": { "type": "array", "items": { "type": "string" } },
+    "headline": { "type": ["string", "null"], "description": "Short label of the primary finding, e.g. '7 negative lines ($1,963.26)'." },
+    "issueCount": { "type": "integer" },
+    "decision": { "$ref": "#/$defs/decision" },
+    "category": { "type": ["string", "null"] },
+    "amountAtRisk": { "type": ["number", "null"] },
+    "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "rationale": { "type": ["string", "null"] },
+    "recommendedAction": { "type": ["string", "null"] },
+    "expertsAgree": { "type": "boolean" },
+    "assessedAtUtc": { "type": "string", "format": "date-time" },
+    "citations": { "type": "array", "items": { "$ref": "#/$defs/citation" } },
+    "findings": {
+      "type": "array",
+      "description": "One finding per triaged issue, primary first. Extraction and data-quality findings are rules-based; payer findings come from the policy agent.",
+      "items": {
+        "type": "object",
+        "required": ["issueId", "kind", "source", "decision"],
+        "properties": {
+          "issueId": { "type": "string" },
+          "kind": { "enum": ["extraction", "data_quality", "payer"] },
+          "source": { "enum": ["rules", "agent", "none"] },
+          "headline": { "type": "string" },
+          "title": { "type": "string" },
+          "lineCount": { "type": "integer" },
+          "lines": { "type": "array", "items": { "type": "object" } },
+          "decision": { "$ref": "#/$defs/decision" },
+          "category": { "type": ["string", "null"] },
+          "amountAtRisk": { "type": ["number", "null"] },
+          "confidence": { "type": ["number", "null"] },
+          "rationale": { "type": ["string", "null"] },
+          "recommendedAction": { "type": ["string", "null"] },
+          "citations": { "type": "array", "items": { "$ref": "#/$defs/citation" } },
+          "expertsAgree": { "type": "boolean" }
+        }
+      }
+    },
+    "experts": {
+      "type": "array",
+      "description": "One status row per expert (policy assurance agent today; WebIQ optional). 'skipped' when triage left no payer issues.",
+      "items": {
+        "type": "object",
+        "required": ["expert", "status"],
+        "properties": {
+          "expert": { "type": "string" },
+          "label": { "type": "string" },
+          "agent": { "type": ["string", "null"] },
+          "status": { "enum": ["completed", "not_configured", "failed", "skipped"] },
+          "durationMs": { "type": "integer" },
+          "error": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "description": "Extract ACH remittance metadata and payment lines.",
+  "baseAnalyzerId": "prebuilt-document",
+  "models": {
+    "completion": "gpt-5.5",
+    "embedding": "text-embedding-3-large"
+  },
+  "config": {
+    "returnDetails": true,
+    "estimateFieldSourceAndConfidence": true
+  },
+  "fieldSchema": {
+    "fields": {
+      "payerName": {
+        "type": "string",
+        "method": "extract",
+        "description": "Organization or payer issuing the remittance payment."
+      },
+      "remittanceDate": {
+        "type": "date",
+        "method": "extract",
+        "description": "Effective date, payment date, or remittance date shown in the source."
+      },
+      "paymentTotal": {
+        "type": "number",
+        "method": "extract",
+        "description": "Overall payment or remittance total when explicitly shown."
+      },
+      "currency": {
+        "type": "string",
+        "method": "extract",
+        "description": "Currency code when explicitly shown. Do not infer a default."
+      },
+      "paymentReference": {
+        "type": "string",
+        "method": "extract",
+        "description": "ACH trace, check number, payment reference, or confirmation number."
+      },
+      "paymentLines": {
+        "type": "array",
+        "method": "extract",
+        "description": "All payment lines visible in the source, excluding subtotal and total rows.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "proInvoiceNumber": {
+              "type": "string",
+              "method": "extract",
+              "description": "PRO or invoice identifier. Preserve leading zeroes and return as text. Do not substitute PO, load, BOL, or customer reference numbers."
+            },
+            "amountPaid": {
+              "type": "number",
+              "method": "extract",
+              "description": "Amount paid for this PRO or invoice, not amount due or a subtotal."
+            },
+            "invoiceDate": {
+              "type": "date",
+              "method": "extract",
+              "description": "Invoice date when present."
+            },
+            "originalInvoiceAmount": {
+              "type": "number",
+              "method": "extract",
+              "description": "Original invoice amount when separately identified."
+            },
+            "discountAmount": {
+              "type": "number",
+              "method": "extract",
+              "description": "Discount applied to this line when separately identified."
+            },
+            "adjustmentAmount": {
+              "type": "number",
+              "method": "extract",
+              "description": "Adjustment applied to this line when separately identified."
+            },
+            "lineReference": {
+              "type": "string",
+              "method": "extract",
+              "description": "Other source reference for this payment line."
+            }
+          }
+        }
+      }
+    }
+  }
+}

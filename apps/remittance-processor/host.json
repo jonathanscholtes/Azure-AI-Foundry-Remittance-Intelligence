@@ -1,0 +1,29 @@
+{
+  "version": "2.0",
+  "functionTimeout": "00:30:00",
+  "extensionBundle": {
+    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "version": "[4.*, 5.0.0)"
+  },
+  "extensions": {
+    "durableTask": {
+      "hubName": "%DURABLE_TASK_HUB%",
+      "maxConcurrentActivityFunctions": 8,
+      "maxConcurrentOrchestratorFunctions": 16
+    },
+    "serviceBus": {
+      "prefetchCount": 0,
+      "maxConcurrentCalls": 16,
+      "autoCompleteMessages": true,
+      "maxAutoLockRenewalDuration": "00:05:00"
+    }
+  },
+  "logging": {
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": true,
+        "excludedTypes": "Request"
+      }
+    }
+  }
+}

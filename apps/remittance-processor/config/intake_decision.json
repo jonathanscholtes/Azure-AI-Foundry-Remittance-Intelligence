@@ -1,0 +1,27 @@
+{
+  "_comment": "Microsoft-Decision-1 questions for source and thread classification. Business-owned configuration: edit the wording or thresholds here, run scripts/golden_eval.py, then deploy the Function. Option keys are referenced by code - change descriptions freely, but keep the keys.",
+  "minProbability": 0.75,
+  "maxExcerptChars": 1200,
+  "maxLinesPerSource": 10,
+  "sourceRole": {
+    "instructions": "What is source {id} ({name}) in this remittance email? Judge from its text excerpt and the payment lines found in it.",
+    "criteria": {
+      "payment_detail": "Lists the invoices or PROs a payment is applied to, with amounts - a remittance advice, payment summary or line list.",
+      "payment_proof": "Confirms that a transfer happened - a bank or ACH transfer receipt or confirmation for one payment - rather than listing what it pays.",
+      "statement": "Lists amounts owed or open items (a statement or AR export); it does not record a payment.",
+      "correspondence": "Discussion about payments - questions, disputes or proposals such as which invoice to apply money to - without being the remittance itself.",
+      "other": "Anything else: signatures, logos, disclaimers, unrelated content.",
+      "cannot_tell": "Not enough information to decide."
+    }
+  },
+  "threadKind": {
+    "instructions": "What kind of email thread is this, taking all of its sources together?",
+    "criteria": {
+      "single_remittance": "One payment and the lines it pays.",
+      "multiple_payments": "Several separate payments, each with its own amount or date.",
+      "dispute_or_inquiry": "A collections inquiry or dispute about payments (e.g. an unapplied or already-paid amount) rather than a plain remittance.",
+      "no_remittance": "No payment information at all.",
+      "cannot_tell": "Not enough information to decide."
+    }
+  }
+}

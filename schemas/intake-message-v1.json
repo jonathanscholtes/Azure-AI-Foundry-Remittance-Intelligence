@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "intake-message-v1.json",
+  "title": "Remittance intake message (Service Bus remittance-intake queue)",
+  "description": "Claim-check reference to a raw message already written to Blob incoming/. Never carries MSG/EML or attachment bytes. Service Bus MessageId = processingId (duplicate detection) except reprocess, which uses processingId:uuid.",
+  "type": "object",
+  "required": ["schemaVersion", "processingId", "sourceBlobName"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "processingId": { "type": "string", "pattern": "^REM-[0-9A-F]{20}$", "description": "REM- + first 20 hex chars of the source SHA-256; also the Durable instance id." },
+    "correlationId": { "type": "string" },
+    "stream": { "type": "string", "enum": ["upload", "email", "loadtest", "reprocess"], "description": "Producing ingestion stream." },
+    "sourceContainer": { "type": "string", "default": "incoming" },
+    "sourceBlobName": { "type": "string", "description": "{processingId}/{sanitized file name}" },
+    "sourceName": { "type": "string" },
+    "sourceSha256": { "type": ["string", "null"] },
+    "sourceSizeBytes": { "type": ["integer", "null"] },
+    "submittedAtUtc": { "type": "string", "format": "date-time" },
+    "force": { "type": "boolean", "default": false, "description": "Bypass the already-Extracted duplicate check (explicit reprocess)." }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,12 @@
+azure-functions==1.21.3
+azure-functions-durable==1.7.0
+azure-identity==1.25.1
+azure-storage-blob==12.26.0
+azure-data-tables==12.5.0
+azure-ai-contentunderstanding==1.1.0
+# Foundry agents (OpenAI Responses surface); keep in step with agents/requirements.txt.
+azure-ai-projects==2.0.0b2
+openai>=1.66.0,<2.0.0
+extract-msg==0.54.1
+openpyxl==3.1.5
+xlrd==2.0.1

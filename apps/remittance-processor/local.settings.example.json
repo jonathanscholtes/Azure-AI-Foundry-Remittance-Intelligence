@@ -1,0 +1,26 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "STORAGE_CONNECTION_STRING": "UseDevelopmentStorage=true",
+    "STORAGE_TABLE_CONNECTION_STRING": "UseDevelopmentStorage=true",
+    "ServiceBusConnection__fullyQualifiedNamespace": "<namespace>.servicebus.windows.net",
+    "INTAKE_QUEUE_NAME": "remittance-intake",
+    "DURABLE_TASK_HUB": "achremittancelocal",
+    "MAX_MSG_SIZE_MB": "25",
+    "CONTENT_UNDERSTANDING_ENDPOINT": "",
+    "CONTENT_UNDERSTANDING_ANALYZER_ID": "ach.remittance.v1",
+    "RECONCILIATION_TOLERANCE": "0.01",
+    "RECEIVING_ORG_ALIASES": "",
+    "PRO_MIN_DIGITS": "",
+    "PRO_MAX_DIGITS": "",
+    "PRO_STRIP_SUFFIXES": "",
+    "PRO_SUFFIX_EXAMPLES": "",
+    "FOUNDRY_PROJECT_ENDPOINT": "",
+    "EXTRACTION_AGENT_NAME": "ach-extraction-expert",
+    "RESOLUTION_AGENT_NAME": "ach-resolution-expert",
+    "INTAKE_DECISION_DEPLOYMENT": "intake-decision",
+    "ASSURANCE_AGENT_NAME": "ach-assurance-expert"
+  }
+}

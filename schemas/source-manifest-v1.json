@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ach.example/schemas/source-manifest-v1.json",
+  "title": "ACH Remittance Source Manifest",
+  "type": "object",
+  "required": ["schemaVersion", "processingId", "source", "message", "candidates", "recommendedProcessing"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "processingId": { "type": "string", "pattern": "^REM-[A-F0-9]{20}$" },
+    "runId": { "type": "string", "format": "uuid" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "required": ["name", "sourceType", "contentType", "size", "sha256", "blobUri"],
+      "properties": {
+        "name": { "type": "string" },
+        "sourceType": { "const": "msg" },
+        "contentType": { "const": "application/vnd.ms-outlook" },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "blobUri": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "message": {
+      "type": "object",
+      "properties": {
+        "subject": { "type": ["string", "null"] },
+        "senderName": { "type": ["string", "null"] },
+        "senderEmail": { "type": ["string", "null"] },
+        "sentDate": { "type": ["string", "null"] },
+        "messageId": { "type": ["string", "null"] },
+        "inReplyTo": { "type": ["string", "null"] },
+        "references": { "type": "array", "items": { "type": "string" } },
+        "hasBody": { "type": "boolean" },
+        "hasAttachments": { "type": "boolean" },
+        "plainTextBlobUri": { "type": ["string", "null"] },
+        "htmlBlobUri": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["candidateId", "sourceType", "name", "extension", "contentType", "size", "classification", "score", "selectionReasons"],
+        "properties": {
+          "candidateId": { "type": "string" },
+          "sourceType": { "enum": ["attachment", "message_body", "embedded_message_body"] },
+          "embeddedIn": { "type": ["string", "null"], "description": "For content unpacked from an attached email: the chain of embedded email subjects, outermost first." },
+          "name": { "type": "string" },
+          "extension": { "type": "string" },
+          "contentType": { "type": "string" },
+          "size": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "isInline": { "type": "boolean" },
+          "classification": { "enum": ["remittance_candidate", "unclassified_candidate", "ignored_candidate", "duplicate_candidate"] },
+          "score": { "type": "integer" },
+          "selectionReasons": { "type": "array", "items": { "type": "string" } },
+          "blobUri": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "recommendedProcessing": {
+      "type": "object",
+      "required": ["primaryCandidateId", "strategy", "requiresMultipleCandidateAnalysis"],
+      "properties": {
+        "primaryCandidateId": { "type": ["string", "null"] },
+        "strategy": { "enum": ["content_understanding", "deterministic_parser", "manual_review"] },
+        "requiresMultipleCandidateAnalysis": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "attachments": { "type": "array", "items": { "type": "object" } },
+    "processing": {
+      "type": "object",
+      "required": ["status", "auditBlobUri", "validationBlobUri", "finalResultBlobUri", "csvBlobUri"],
+      "properties": {
+        "status": { "enum": ["Extracted", "ReviewRequired"] },
+        "auditBlobUri": { "type": "string" },
+        "validationBlobUri": { "type": "string" },
+        "finalResultBlobUri": { "type": "string" },
+        "csvBlobUri": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

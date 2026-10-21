@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ach.example/schemas/final-result-v1.json",
+  "title": "ACH Remittance Processing Result",
+  "type": "object",
+  "required": ["schemaVersion", "analyzerVersion", "processingId", "runId", "correlationId", "status", "source", "remittanceMetadata", "paymentLines", "quality", "manualReviewItems", "candidateResults", "outputFile"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "analyzerVersion": { "type": "string", "description": "Content Understanding analyzer id(s) the candidates used (comma-separated), or \"none\" when no candidate was analyzed by CU." },
+    "processingId": { "type": "string" },
+    "runId": { "type": "string", "format": "uuid" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "status": { "enum": ["Extracted", "ReviewRequired"] },
+    "source": {
+      "type": "object",
+      "required": ["messageName", "sha256", "candidateIds"],
+      "properties": {
+        "messageName": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "candidateIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "remittanceMetadata": {
+      "type": "object",
+      "required": ["payerName", "remittanceDate", "paymentTotal", "currency", "paymentReference"],
+      "properties": {
+        "payerName": { "type": ["string", "null"] },
+        "remittanceDate": { "type": ["string", "null"] },
+        "paymentTotal": { "type": ["number", "null"] },
+        "currency": { "type": ["string", "null"] },
+        "paymentReference": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "paymentLines": { "type": "array", "items": { "type": "object" } },
+    "quality": {
+      "type": "object",
+      "required": ["lineCount", "calculatedPaymentTotal", "totalDifference", "isReconciled", "requiresReview", "warnings", "conflicts", "duplicateGroups"],
+      "properties": {
+        "lineCount": { "type": "integer", "minimum": 0 },
+        "calculatedPaymentTotal": { "type": "number" },
+        "totalDifference": { "type": ["number", "null"] },
+        "isReconciled": { "type": ["boolean", "null"] },
+        "requiresReview": { "type": "boolean" },
+        "defaultsApplied": { "type": "array", "items": { "type": "string" } },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "conflicts": { "type": "array", "items": { "type": "object" } },
+        "duplicateGroups": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": true
+    },
+    "manualReviewItems": { "type": "array", "items": { "type": "object" } },
+    "candidateResults": { "type": "array", "items": { "type": "object" } },
+    "outputFile": {
+      "type": "object",
+      "required": ["format", "hasHeader", "blobUri", "fileName"],
+      "properties": {
+        "format": { "const": "csv" },
+        "hasHeader": { "const": false },
+        "blobUri": { "type": ["string", "null"] },
+        "fileName": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

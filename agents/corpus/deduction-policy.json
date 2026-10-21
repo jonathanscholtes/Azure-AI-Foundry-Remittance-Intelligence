@@ -1,0 +1,72 @@
+[
+  {
+    "id": "pol-ca-01",
+    "policyId": "CA-01",
+    "title": "Cash application - reconciliation tolerance",
+    "category": "reconciliation",
+    "content": "An ACH remittance is applied automatically only when the stated payment total equals the sum of the remittance payment lines within a tolerance of USD 0.01. Any difference greater than USD 0.01 is an exception and must be dispositioned by a cash application analyst before cash is applied. Differences are never written off automatically."
+  },
+  {
+    "id": "pol-ca-02",
+    "policyId": "CA-02",
+    "title": "Small-balance short pay write-off",
+    "category": "short_pay",
+    "content": "Unexplained short payments of USD 25.00 or less per remittance may be approved by a cash application analyst and written off to the small-balance adjustment account, provided the payer has no more than three small-balance short pays in the trailing 90 days. Short pays above USD 25.00 require a supporting reason code or documentation from the payer."
+  },
+  {
+    "id": "pol-dd-01",
+    "policyId": "DD-01",
+    "title": "Early payment discount terms",
+    "category": "early_payment_discount",
+    "content": "Customers on 1% 10 Net 30 terms may deduct a 1.0 percent early payment discount when payment is received within 10 calendar days of the invoice date. A discount taken after the 10-day window is not allowed and must be re-billed. When the remittance shows a discount amount per line equal to 1.0 percent of the original invoice amount and the payment date is within terms, approve the deduction."
+  },
+  {
+    "id": "pol-dd-02",
+    "policyId": "DD-02",
+    "title": "Freight claim deductions",
+    "category": "freight_claim",
+    "content": "Payers may not deduct freight claims (loss, damage or shortage) from freight bill payments unless a claim number has been issued by Foundry Freight Claims and the claim has been approved. A deduction referencing an approved claim number is allowed up to the approved claim amount. A deduction for an unfiled or pending claim must be disputed and the payer asked to pay the freight bill in full."
+  },
+  {
+    "id": "pol-dd-03",
+    "policyId": "DD-03",
+    "title": "Accessorial charge disputes",
+    "category": "accessorial_dispute",
+    "content": "Accessorial charges (detention, liftgate, residential delivery, reweigh/reclass, inside delivery) that a payer short pays must be supported by a dispute reason. If the payer provides a reason, route the line to billing for review and record the deduction as pending; do not approve or reject automatically. If no reason is provided, request remittance detail from the payer."
+  },
+  {
+    "id": "pol-dd-04",
+    "policyId": "DD-04",
+    "title": "Duplicate payments and overpayments",
+    "category": "duplicate_payment",
+    "content": "When the same PRO number is paid more than once, or a remittance total exceeds the sum of its lines, the excess is an overpayment. Apply the valid payment, hold the excess as unapplied cash on the payer account, and notify the payer. Overpayments are never applied to unrelated open invoices without payer instruction."
+  },
+  {
+    "id": "pol-rd-01",
+    "policyId": "RD-01",
+    "title": "Missing or inaccessible remittance detail",
+    "category": "missing_remittance_detail",
+    "content": "If an ACH payment arrives without line-level remittance detail, or the detail is only available through a payer portal link that requires a login, the analyst must request the remittance detail file from the payer before applying cash. Do not apply cash by guessing the invoices. Record the request date; follow up after two business days."
+  },
+  {
+    "id": "pol-rd-02",
+    "policyId": "RD-02",
+    "title": "Remittance data quality issues",
+    "category": "data_quality",
+    "content": "Remittances with missing payer name, missing or invalid remittance date, missing PRO or invoice numbers, or unreadable attachments are data quality exceptions. The analyst corrects the data from the source documents where the value is clearly visible; otherwise request a corrected remittance from the payer. Extracted values must never be altered without source evidence."
+  },
+  {
+    "id": "pol-rd-03",
+    "policyId": "RD-03",
+    "title": "Conflicting remittance sources",
+    "category": "data_quality",
+    "content": "When the email body and an attachment, or two attachments, show different amounts for the same PRO number or different payment totals, the attachment issued by the payer's accounts payable system takes precedence over free-text email content. If precedence cannot be determined, do not apply cash for the conflicting lines; confirm the correct amounts with the payer first."
+  },
+  {
+    "id": "pol-ap-01",
+    "policyId": "AP-01",
+    "title": "Approval limits for deductions",
+    "category": "approval",
+    "content": "Cash application analysts may approve policy-compliant deductions up to USD 500.00 per remittance. Deductions between USD 500.01 and USD 5,000.00 require cash application supervisor approval. Deductions above USD 5,000.00 require credit manager approval. Approval must be recorded against the remittance processing ID."
+  }
+]

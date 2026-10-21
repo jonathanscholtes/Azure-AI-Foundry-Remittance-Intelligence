@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "golden-sample-v1.json",
+  "title": "Golden-set sample labels (samples/golden/<id>/expected.json)",
+  "description": "Verified expected output for one real remittance, scored by scripts/golden_eval.py. Payment lines live next to it in expected-lines.csv (columns: pro,amount; PRO exactly as written in the source, amount to the cent). The folder is git-ignored: customer files and customer-derived labels are never committed.",
+  "type": "object",
+  "required": ["schemaVersion", "id", "source", "expected"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "id": { "type": "string" },
+    "source": { "type": "string", "description": "File name of the .msg/.eml in the sample folder." },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "verified": {
+      "description": "null while the labels are a draft from pipeline output; set by `golden_eval.py verify` after a person checks them against the source.",
+      "oneOf": [
+        { "type": "null" },
+        { "type": "object", "required": ["by", "on"], "properties": { "by": { "type": "string" }, "on": { "type": "string", "format": "date" } } }
+      ]
+    },
+    "notes": { "type": "string", "description": "What makes this sample interesting, and any business rule its labels depend on." },
+    "expected": {
+      "type": "object",
+      "properties": {
+        "status": { "enum": ["Completed", "ReviewRequired", "Failed"] },
+        "metadata": {
+          "type": "object",
+          "description": "Only the fields listed are scored.",
+          "properties": {
+            "payerName": { "type": ["string", "null"] },
+            "remittanceDate": { "type": ["string", "null"] },
+            "paymentTotal": { "type": ["number", "null"] },
+            "paymentReference": { "type": ["string", "null"] }
+          }
+        },
+        "issues": { "type": "array", "items": { "type": "string" }, "description": "Expected triage issue ids (e.g. payer:negative_amount_paid). Omit to skip scoring issues." }
+      }
+    }
+  }
+}

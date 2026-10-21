@@ -1,0 +1,36 @@
+{
+  "version": "2026-10-21 retail list, westus3, Data Zone Standard, short context",
+  "basis": "Azure list prices (westus3, retrieved 2026-10-21)",
+  "disclaimer": "Estimate only: based on Azure list prices, before any negotiated discounts, credits or taxes. Actual charges may differ; Azure Cost Management is the billing record.",
+  "currency": "USD",
+  "notes": [
+    "Rates for the estimated cost per run (shared/usage.py). Runs store raw usage, so changing a rate here re-prices future runs and never needs reprocessing.",
+    "Source: Azure Retail Prices API (https://prices.azure.com/api/retail/prices), westus3, retrieved 2026-10-21. These are LIST prices; replace them with the customer's negotiated (EA / MCA) rates or the effective rates from Cost Management (cost / quantity per meter) for the pilot.",
+    "Models: Data Zone Standard ('Dz' / 'Std DZ' meters), short-context ('ShortCo') tier. Long-context requests bill at higher 'LongCo' meters; ours are short. GPT-5.6 Terra also has a cache-write meter ('Cd Wr', $2.75 / 1M) that the run usage does not separate, so a run's estimate can be slightly low when its prompt is first cached.",
+    "Content Understanding: standard contextualization ('Std Contextualization Tokens'); the advanced rate applies only to analyzers with labeled examples (not used). Decision-1 has a single token meter, used for input and output.",
+    "Update 'version' whenever rates change; each run records the version it was priced with."
+  ],
+  "contentUnderstanding": {
+    "pagesPer1000": { "minimal": 0.01, "basic": 1.0, "standard": 5.0 },
+    "contextualizationPer1M": 1.0
+  },
+  "models": {
+    "gpt-5.5": {
+      "aliases": ["cu-gpt-55"],
+      "inputPer1M": 5.5,
+      "cachedInputPer1M": 0.55,
+      "outputPer1M": 33.0
+    },
+    "gpt-5.6-terra": {
+      "aliases": ["reasoning-gpt-56-terra"],
+      "inputPer1M": 2.2,
+      "cachedInputPer1M": 0.22,
+      "outputPer1M": 13.2
+    },
+    "Microsoft-Decision-1": {
+      "aliases": ["intake-decision"],
+      "inputPer1M": 0.042,
+      "outputPer1M": 0.042
+    }
+  }
+}

@@ -1,0 +1,4 @@
+# Pinned for the AzureAISearchAgentTool surface; keep in step with apps/remittance-processor.
+azure-ai-projects==2.0.0b2
+azure-identity>=1.18.0
+azure-search-documents>=11.6.0

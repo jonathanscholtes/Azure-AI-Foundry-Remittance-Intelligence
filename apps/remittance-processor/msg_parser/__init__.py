@@ -1,0 +1,1 @@
+"""Outlook MSG intake and decomposition."""
