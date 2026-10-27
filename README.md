@@ -11,7 +11,7 @@ Structured tables are read deterministically and must prove themselves against t
 > [!TIP]
 > **Deploy it:** follow the step-by-step [Deployment Guide](docs/deployment_steps.md).
 
-![Remittance Processing home page: upload, processing workflow, live pipeline, recent files and the needs-review queue](media/UI_home.png)
+![Remittance Processing home page: upload, processing workflow, live pipeline, recent files and the needs-review queue](media/UI_home1.png)
 
 *The home page: upload remittance emails, follow each one through the processing workflow, and watch the live pipeline, recent files and the needs-review queue.*
 
@@ -219,7 +219,7 @@ Add `-Private -PrivateUi` to deploy into an existing landing-zone VNet with a VP
 
 The infrastructure phase deploys the **ACH Remittance Processing** dashboard (Azure Monitor dashboards with Grafana): outcomes and ROI (handled end to end vs flagged for review vs failed, estimated time saved), cost and usage per message by payer and date, and operations. Every run also emits a `remittance_run_completed` event to Application Insights. See [observability/README.md](observability/README.md) for the panels and ready-to-run queries.
 
-![ACH Remittance Processing dashboard: messages processed, straight-through rate, needs review, failed, AI cost and cost per message, payment lines and dollars processed, time saved, median processing time, and messages per day by outcome](media/azure_monitor.png)
+![ACH Remittance Processing dashboard: messages processed, straight-through rate, needs review, failed, AI cost and cost per message, payment lines and dollars processed, time saved, median processing time, and messages per day by outcome](media/azure_monitor1.png)
 
 *The Outcomes and ROI section of the ACH Remittance Processing dashboard in Azure Monitor.*
 

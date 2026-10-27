@@ -95,6 +95,11 @@ With the default `--unique pad`, every send is made unique so it is processed in
 ## What to watch
 
 - **Live Pipeline** page: queue depth, runs in flight, throughput, p95 processing time, Content Understanding throttle retries, dead-letter count.
+
+  ![Live Pipeline during a load test: queue, in-flight, dead-letter, done, per-minute and p95 counters; throughput for the last 60 minutes by outcome with p50, p95, average queue wait and throttle retries; and a synthetic message from the loadtest stream in the Extraction step](../media/live_pipeline.png)
+
+  *Live Pipeline during a run on the synthetic set: the `loadtest` stream, one message in Extraction, throughput by outcome, p50 / p95 and throttle retries.*
+
 - **ACH Remittance Processing** dashboard (Azure Monitor → Dashboards with Grafana): outcomes, cost and usage per run, capacity.
 - **Script output:** messages sent by status, distinct files, upload time p50 / p95. Upload time covers only the API accepting the message; processing time is on the Live Pipeline page and the dashboard.
 
