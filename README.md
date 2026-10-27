@@ -55,9 +55,13 @@ For a payment table in the email body or a spreadsheet, an agent maps the column
 | Expert | Called when | Its answer is applied only if |
 |---|---|---|
 | **ACH Extraction Expert** | A source has a payment table | The mapped rows reconcile to the table's total |
-| **Microsoft-Decision-1** | An email has several candidate sources | (Classification only: payment detail, transfer proof, statement, correspondence) |
+| **Microsoft-Decision-1** | Two or more sources read by Content Understanding returned lines | Its probability is at least 0.75; otherwise the lines are left unchanged. (Classification only: payment detail, transfer proof, statement, correspondence) |
 | **ACH Resolution Expert** (GPT-5.6 Terra) | Verification failed, or the payer, date or payment reference is missing or disputed | Every recovered line is grounded and the total reconciles. A date or reference must appear in the text it cites. A payer is only ever *recommended*. |
 | **ACH Assurance Expert** | A run is flagged with payer questions (short pays, credits, duplicate or conflicting references, several payments, inquiry threads) | Its findings are advisory. An analyst dispositions every review. |
+
+![Escalation path: each source is read by a deterministic table reader or by Content Understanding; Microsoft-Decision-1 classifies the sources only when two or more Content Understanding sources returned lines and its answer is applied only at probability 0.75 or higher; validation and reconciliation follow, and a run that fails goes to the Resolution Expert, whose answer is verified by code, or else to analyst review](media/decision1_escalation_path.png)
+
+*Where each expert enters the pipeline: code first, Decision-1 only for multi-source emails, the Resolution Expert only when verification fails. The reasoning behind this escalation path is in [Between Rules and Reasoning: Microsoft-Decision-1 in a Document Processing Pipeline](https://stochasticcoder.com/2026/10/27/between-rules-and-reasoning-microsoft-decision-1-in-a-document-processing-pipeline/).*
 
 **Pattern 3: A durable, auditable pipeline.**
 The upload is stored first and only a reference travels on the queue (*claim check*). The processing ID is the content hash, so duplicates are detected. One Durable Functions orchestration runs per message, and a single Recorder writes the run ledger, the live timeline and the audit blob. Failures land in a dead-letter queue and can be replayed.
@@ -215,7 +219,10 @@ Add `-Private -PrivateUi` to deploy into an existing landing-zone VNet with a VP
 
 The infrastructure phase deploys the **ACH Remittance Processing** dashboard (Azure Monitor dashboards with Grafana): outcomes and ROI (handled end to end vs flagged for review vs failed, estimated time saved), cost and usage per message by payer and date, and operations. Every run also emits a `remittance_run_completed` event to Application Insights. See [observability/README.md](observability/README.md) for the panels and ready-to-run queries.
 
-![Azure Monitor](media/azure_monitor.png)
+![ACH Remittance Processing dashboard: messages processed, straight-through rate, needs review, failed, AI cost and cost per message, payment lines and dollars processed, time saved, median processing time, and messages per day by outcome](media/azure_monitor.png)
+
+*The Outcomes and ROI section of the ACH Remittance Processing dashboard in Azure Monitor.*
+
 ---
 
 ## Clean Up
