@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "05-image-png",
+  "source": "05-image-png.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Remittance as a PNG screenshot of a payment portal. A clean image attachment (no PDF, no text) - extraction depends on OCR.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Wingtip Toys",
+      "remittanceDate": "2026-10-09",
+      "paymentTotal": 23485.54,
+      "paymentReference": "269677329"
+    },
+    "issues": []
+  }
+}

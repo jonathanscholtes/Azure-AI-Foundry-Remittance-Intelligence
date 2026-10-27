@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "03-pdf-remittance-advice",
+  "source": "03-pdf-remittance-advice.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Short email with a one-page PDF remittance advice. Typical ERP remittance advice PDF (text layer) with gross, discount and paid columns.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Contoso Manufacturing",
+      "remittanceDate": "2026-10-07",
+      "paymentTotal": 41128.76,
+      "paymentReference": "384072"
+    },
+    "issues": []
+  }
+}

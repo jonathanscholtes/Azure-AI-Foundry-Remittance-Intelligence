@@ -181,10 +181,10 @@ The script ends with a phase checklist and the service endpoints, including the 
 - [ ] Run Details shows payment lines and a **Cost and usage** card
 - [ ] In the Azure portal, the **ACH Remittance Processing** dashboard (Azure Monitor → Dashboards with Grafana) shows the run within a few minutes
 
-To generate traffic with fictional data:
+To generate traffic, replay messages from a local folder of `.msg` / `.eml` files (see [Load Testing](load-testing.md)):
 
 ```powershell
-python scripts/load_test.py --api https://<ui-fqdn> --count 25
+python test/load/load_test.py --api https://<ui-fqdn> --source-dir <folder> --count 25 --interval-seconds 10
 ```
 
 ---
@@ -258,7 +258,7 @@ Pass the same `-Private` / `-PrivateUi` switches you deployed with whenever you 
 | Function publish fails or times out (private) | Publishing needs network access to the storage private endpoint. Connect to the VNet or its VPN, check that `<account>.blob.core.windows.net` resolves to a private IP (`Test-NetConnection <account>.blob.core.windows.net -Port 443`), and re-run `./scripts/Deploy-FunctionApp.ps1`. |
 | `az acr build` is slow or hangs | The build context includes `node_modules`. Keep the patterns in `apps/*/.dockerignore` without a trailing slash (`node_modules`, not `node_modules/`). |
 | Many runs go to review with *PROs not in standard format* | The customer's PRO length or suffixes aren't set, or the infrastructure phase ran without `.env` (it printed *PRO_\* not set*). Check the `PRO_*` app settings on the Function app, fix `.env` ([Step 3](#step-3--configure-for-the-customer)) and re-run the infrastructure phase. |
-| A run stays **Queued** for more than a minute | Check that the Function app is running and look at the queue's active and dead-letter counts on **Live Pipeline**. |
+| A run stays **Queued** for more than a minute | Look at **Live Pipeline**: messages counted under *Queued (Service Bus)* with nothing *In flight* mean the Function app isn't reading the queue. Check that it is running and that **Always On** is on: the app has no HTTP triggers, so on a Dedicated plan it idles without Always On and nothing wakes it. Fix with `az functionapp config set -g <resource-group> -n <function-app> --always-on true` and restart the app; queued messages then start within about a minute. Scaling the plan down to a Free or Shared tier (for example by a cost-saving schedule) turns Always On off, and scaling back up does not restore it. Messages in *Dead-letter* failed repeatedly; replay them from Live Pipeline. |
 | UI shows `RBAC: access denied`, or doesn't resolve, with `-PrivateUi` | You are not reaching it through the VNet. Connect the VPN; a secure-access client that tunnels Azure traffic must be off, or bypass `*.azurecontainerapps.io`. |
 | Azure portal can't list private storage containers ("cannot access storage endpoint") | The browser blocks a public site from calling a private IP. On the portal tab: site information icon → **Permissions for this site** → **Local network access** → **Allow**, then reload. Or use `az storage ... --auth-mode login` over the VPN. |
 

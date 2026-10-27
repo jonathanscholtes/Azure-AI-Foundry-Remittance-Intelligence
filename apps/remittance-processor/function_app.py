@@ -1,6 +1,6 @@
 """ACH remittance processor - Service Bus intake + Durable Functions orchestration.
 
-    UI/API upload | email adapter | load generator
+    API upload (UI or an email integration)
         -> Blob `incoming/{processingId}/{name}` (content plane)
         -> Service Bus `remittance-intake` (reference message only)
         -> intake_starter (this file) -> remittance_orchestrator (orchestration/orchestrator.py)

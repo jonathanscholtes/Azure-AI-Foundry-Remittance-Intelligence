@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "id": "15-no-remittance",
+  "source": "15-no-remittance.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Payment notification with no remittance detail. The payer says a payment was sent but gives no invoices, PROs or amounts.",
+  "expected": {
+    "status": "ReviewRequired",
+    "metadata": {
+      "payerName": "Margie's Travel"
+    },
+    "issues": [
+      "payer:no_remittance_in_email"
+    ]
+  }
+}

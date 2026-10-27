@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "04-scanned-pdf",
+  "source": "04-scanned-pdf.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Scanned PDF remittance (image only, no text layer). The attachment is a tilted, speckled page image inside a PDF; extraction depends on OCR.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Tailspin Toys",
+      "remittanceDate": "2026-10-08",
+      "paymentTotal": 14985.81,
+      "paymentReference": "CHK460778"
+    },
+    "issues": []
+  }
+}

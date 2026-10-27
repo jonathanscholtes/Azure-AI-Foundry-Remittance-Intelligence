@@ -3,7 +3,7 @@ __pycache__/
 .pytest_cache/
 .python_packages/
 local.settings.json
-samples/**
+samples/golden/**
 !samples/README.md
 *.msg
 *.pdf
@@ -66,3 +66,12 @@ parselog.txt
 
 design/
 project.md
+
+# Synthetic samples (invented data, scripts/synthetic_samples/generate.py) are tracked; their
+# _build/ attachments are already inside each .msg and are regenerated on demand.
+!samples/synthetic/
+!samples/synthetic/**
+samples/synthetic/_build/
+
+# Load-test result files (test/load/load_test.py --results)
+test/load/results/

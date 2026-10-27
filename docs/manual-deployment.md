@@ -739,7 +739,7 @@ Open it in the portal under **Monitor → Dashboards with Grafana**. Viewers nee
 | Foundry account | Azure AI User, Azure AI Developer | Create the agents |
 | AI Search | Search Index Data Contributor, Search Service Contributor | Create the index, load the corpus |
 | Storage account | Storage Blob Data Contributor, Storage Table Data Contributor | Containers, tables, diagnostics |
-| Service Bus | Azure Service Bus Data Owner | Load test, dead-letter replay |
+| Service Bus | Azure Service Bus Data Owner | Running the Function or API locally against the queue, dead-letter replay |
 
 ---
 

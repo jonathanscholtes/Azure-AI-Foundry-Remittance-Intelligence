@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "17-spanish-remittance",
+  "source": "17-spanish-remittance.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Spanish-language email and PDF remittance (day-first dates). Labels in Spanish (Factura, Importe pagado, Total pagado) and dates written dd/mm/yyyy.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Proveedora Litware S.A. de C.V.",
+      "remittanceDate": "2026-10-22",
+      "paymentTotal": 12968.86,
+      "paymentReference": "SPEI6660262927"
+    },
+    "issues": []
+  }
+}

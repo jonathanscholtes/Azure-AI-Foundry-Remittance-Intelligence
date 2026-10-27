@@ -141,7 +141,7 @@ export default function ProcessPage() {
               <TableRow>
                 <TableCell colSpan={5}>
                   <Text italic className={styles.muted}>
-                    Nothing in flight. Upload files on the File Upload page or run scripts/load_test.py.
+                    Nothing in flight. New remittances appear here as they arrive.
                   </Text>
                 </TableCell>
               </TableRow>

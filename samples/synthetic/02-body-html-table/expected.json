@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "02-body-html-table",
+  "source": "02-body-html-table.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Remittance as an HTML table in the body, with a signature logo. HTML-formatted body table with invoice and paid amounts (some lines carry a 2% discount). The signature logo is an inline image that is not a remittance source.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Northwind Traders",
+      "remittanceDate": "2026-10-06",
+      "paymentTotal": 22931.84,
+      "paymentReference": "PMT-2796713"
+    },
+    "issues": []
+  }
+}

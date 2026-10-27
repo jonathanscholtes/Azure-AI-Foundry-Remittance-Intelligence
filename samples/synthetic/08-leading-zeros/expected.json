@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "08-leading-zeros",
+  "source": "08-leading-zeros.msg",
+  "verified": null,
+  "notes": "Synthetic sample. PRO numbers with leading zeros, stored as text in Excel. Every PRO starts with 00; the leading zeros must be kept. No total row - the total is stated only in the body.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Proseware Logistics",
+      "remittanceDate": "2026-10-14",
+      "paymentTotal": 29324.15,
+      "paymentReference": "3387301791"
+    },
+    "issues": []
+  }
+}

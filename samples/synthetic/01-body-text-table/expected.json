@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "01-body-text-table",
+  "source": "01-body-text-table.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Remittance as a plain-text table in the email body. Body-only remittance: no attachments. Fixed-width text table with a TOTAL row.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Fabrikam, Inc.",
+      "remittanceDate": "2026-10-05",
+      "paymentTotal": 16342.63,
+      "paymentReference": "ACH4321785375"
+    },
+    "issues": []
+  }
+}

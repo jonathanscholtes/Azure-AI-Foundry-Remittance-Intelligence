@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "id": "20-conflicting-amounts",
+  "source": "20-conflicting-amounts.msg",
+  "verified": null,
+  "notes": "Synthetic sample. One PRO on two lines with different amounts. A PRO is listed twice with different paid amounts (for example a keying error or a partial payment); the total includes both.",
+  "expected": {
+    "status": "ReviewRequired",
+    "metadata": {
+      "payerName": "Trey Research Labs",
+      "remittanceDate": "2026-10-23",
+      "paymentTotal": 15573.19,
+      "paymentReference": "542444338"
+    },
+    "issues": [
+      "payer:conflicting_payment_line"
+    ]
+  }
+}

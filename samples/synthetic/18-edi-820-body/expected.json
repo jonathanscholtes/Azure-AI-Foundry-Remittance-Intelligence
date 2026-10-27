@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "18-edi-820-body",
+  "source": "18-edi-820-body.msg",
+  "verified": null,
+  "notes": "Synthetic sample. ACH CCD+/CTX remittance as EDI 820 segments in the body. Bank-generated notice with raw X12 820 segments: BPR carries the total and date, TRN the trace number, one RMR*IV segment per PRO.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "VanArsdel Ltd",
+      "remittanceDate": "2026-10-22",
+      "paymentTotal": 12467.86,
+      "paymentReference": "959829803926419"
+    },
+    "issues": []
+  }
+}

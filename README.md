@@ -165,10 +165,11 @@ For a step-by-step walk through one remittance, from upload to CSV or review, se
 ├── infra/                           # Bicep: main.bicep, apps.bicep, reusable modules in core/
 ├── observability/                   # Dashboard generator and the generated dashboard definition
 ├── schemas/                         # Versioned contracts: analyzer, results, manifest, intake, assurance
-├── scripts/                         # Deploy-*.ps1 phases, smoke test, load test, golden-set evaluation
-├── docs/                            # How it works, deployment guides, developer guide, evaluation
+├── scripts/                         # Deploy-*.ps1 phases, smoke test, golden-set evaluation
+├── test/load/                       # Load test: replays messages from a folder against a deployment
+├── docs/                            # How it works, deployment guides, developer guide, evaluation, load testing
 ├── media/                           # Screenshots and diagrams used by the docs
-└── samples/                         # Local-only test messages (git-ignored)
+└── samples/                         # synthetic/: 20 generated test scenarios; real messages stay local (git-ignored)
 ```
 
 </details>
@@ -194,6 +195,7 @@ Add `-Private -PrivateUi` to deploy into an existing landing-zone VNet with a VP
 | [infra/README.md](infra/README.md) | Networking, identities and roles, firewall egress |
 | [Developer Guide](docs/developer-guide.md) | For changing the code: tests, and running the Function app, API or UI against a deployed environment |
 | [Golden-Set Evaluation](docs/evaluation.md) | Measuring accuracy on real messages checked by a person |
+| [Load Testing](docs/load-testing.md) | Replaying messages from a folder at a chosen rate to measure throughput, throttling and queue behavior |
 
 > **Cost:** the models, Content Understanding, AI Search and the other services are billable. Each run records its own usage and estimated cost.
 
@@ -213,6 +215,7 @@ Add `-Private -PrivateUi` to deploy into an existing landing-zone VNet with a VP
 
 The infrastructure phase deploys the **ACH Remittance Processing** dashboard (Azure Monitor dashboards with Grafana): outcomes and ROI (handled end to end vs flagged for review vs failed, estimated time saved), cost and usage per message by payer and date, and operations. Every run also emits a `remittance_run_completed` event to Application Insights. See [observability/README.md](observability/README.md) for the panels and ready-to-run queries.
 
+![Azure Monitor](media/azure_monitor.png)
 ---
 
 ## Clean Up

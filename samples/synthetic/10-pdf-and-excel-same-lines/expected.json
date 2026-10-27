@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "10-pdf-and-excel-same-lines",
+  "source": "10-pdf-and-excel-same-lines.msg",
+  "verified": null,
+  "notes": "Synthetic sample. The same remittance as both a PDF and an Excel file. Two sources with identical lines: they corroborate each other and must not be counted twice or flagged as duplicate payments.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Coho Winery",
+      "remittanceDate": "2026-10-16",
+      "paymentTotal": 25948.03,
+      "paymentReference": "5816874"
+    },
+    "issues": []
+  }
+}

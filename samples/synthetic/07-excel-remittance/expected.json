@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "07-excel-remittance",
+  "source": "07-excel-remittance.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Excel remittance with a header block above the table. 40-line .xlsx: payer and payment details above the table, then gross / discount / net columns and a total row.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Litware, Inc.",
+      "remittanceDate": "2026-10-13",
+      "paymentTotal": 91392.67,
+      "paymentReference": "EFT2354540"
+    },
+    "issues": []
+  }
+}

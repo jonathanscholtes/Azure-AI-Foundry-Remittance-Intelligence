@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "id": "13-forwarded-multi-payment",
+  "source": "13-forwarded-multi-payment.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Forwarded thread carrying two separate payments, each with a bank confirmation. The outer email attaches two earlier emails (embedded .msg). Each has its own line table and an ACH transfer confirmation PDF that lists no invoices. One email, two bank credits.",
+  "expected": {
+    "status": "ReviewRequired",
+    "metadata": {
+      "payerName": "Trey Research"
+    },
+    "issues": [
+      "payer:multiple_payments_in_email"
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "id": "11-wire-fee-short-pay",
+  "source": "11-wire-fee-short-pay.msg",
+  "verified": null,
+  "notes": "Synthetic sample. International wire: the amount paid is the invoices less a bank fee. Invoice lines total 15,049.67; the stated payment is 15,034.67 (a 15.00 wire fee deducted).",
+  "expected": {
+    "status": "ReviewRequired",
+    "metadata": {
+      "payerName": "Fourth Coffee Ltd.",
+      "remittanceDate": "2026-10-19",
+      "paymentTotal": 15034.67,
+      "paymentReference": "FT2766463570"
+    },
+    "issues": [
+      "payer:payment_total_mismatch"
+    ]
+  }
+}

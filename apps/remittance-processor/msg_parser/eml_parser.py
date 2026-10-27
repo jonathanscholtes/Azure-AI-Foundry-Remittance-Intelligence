@@ -1,4 +1,4 @@
-"""RFC 822 / MIME (.eml) intake for the email stream and the synthetic load generator.
+"""RFC 822 / MIME (.eml) intake, alongside Outlook .msg.
 
 Produces the same ``ParsedMessage`` shape as ``parse_msg`` so everything downstream (candidate
 selection, extraction, validation) is identical regardless of the source format.

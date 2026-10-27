@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "id": "16-portal-link",
+  "source": "16-portal-link.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Remittance detail available only behind a supplier-portal link. The email states the amount and links to a portal for the detail; the link is not fetched (the domain is reserved and never resolves).",
+  "expected": {
+    "status": "ReviewRequired",
+    "metadata": {
+      "paymentReference": "9840127734"
+    },
+    "issues": [
+      "payer:external_link_not_fetched"
+    ]
+  }
+}

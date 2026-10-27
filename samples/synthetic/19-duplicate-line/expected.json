@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "id": "19-duplicate-line",
+  "source": "19-duplicate-line.msg",
+  "verified": null,
+  "notes": "Synthetic sample. A PRO paid twice for the same amount in one remittance. One PRO and amount appear on two lines of the same table; the payment total includes both.",
+  "expected": {
+    "status": "ReviewRequired",
+    "metadata": {
+      "payerName": "A. Datum Corporation",
+      "remittanceDate": "2026-10-23",
+      "paymentTotal": 19719.71,
+      "paymentReference": "37906460"
+    },
+    "issues": [
+      "payer:duplicate_payment"
+    ]
+  }
+}

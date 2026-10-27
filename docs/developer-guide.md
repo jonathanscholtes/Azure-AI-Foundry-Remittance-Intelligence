@@ -40,7 +40,7 @@ Push-Location apps/remittance-processor; func start; Pop-Location
 
 In `local.settings.json` (git-ignored), set at least `CONTENT_UNDERSTANDING_ENDPOINT`, `ServiceBusConnection__fullyQualifiedNamespace` and `FOUNDRY_PROJECT_ENDPOINT` from the deployment's outputs, plus your `RECEIVING_ORG_ALIASES` and `PRO_*` settings. Without the agent settings, column mapping falls back to header rules, sources are not classified, failing runs stay in review without a second attempt and payer issues go to manual review.
 
-> Work arrives only through the Service Bus intake queue. Dropping a file into storage does nothing: submit it through the API (below), `scripts/Test-Remittance.ps1` or `scripts/load_test.py`. Stop the deployed Function app while you test, or both will pick up messages from the same queue.
+> Work arrives only through the Service Bus intake queue. Dropping a file into storage does nothing: submit it through the API (below), `scripts/Test-Remittance.ps1` or `test/load/load_test.py`. Stop the deployed Function app while you test, or both will pick up messages from the same queue.
 
 ## Run the API and UI Locally
 

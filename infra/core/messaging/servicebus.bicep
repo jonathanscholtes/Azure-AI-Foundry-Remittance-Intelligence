@@ -1,5 +1,5 @@
-// Service Bus (Standard) - the remittance intake bus. Every ingestion stream (UI/API upload today,
-// email next, the load generator) writes the raw message to Blob `incoming/` and then sends a small
+// Service Bus (Standard) - the remittance intake bus. Every ingestion stream (UI upload, an email
+// integration) goes through the API, which writes the raw message to Blob `incoming/` and then sends a small
 // reference message here; a Service Bus-triggered Durable starter begins one orchestration per message.
 // Messages carry identifiers only (claim-check pattern) - never MSG/attachment bytes.
 //
@@ -19,7 +19,7 @@ param queueName string = 'remittance-intake'
 @description('Principal id of the shared app/Function managed identity.')
 param managedIdentityPrincipalId string
 
-@description('Optional Entra principal id (deploying user) for the load generator and DLQ replay.')
+@description('Optional Entra principal id (deploying user) for local development against the queue and DLQ replay.')
 param devPrincipalId string = ''
 
 param tags object = {}

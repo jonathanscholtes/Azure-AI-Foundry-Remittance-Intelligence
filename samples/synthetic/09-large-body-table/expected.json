@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "09-large-body-table",
+  "source": "09-large-body-table.msg",
+  "verified": null,
+  "notes": "Synthetic sample. 1,200-line tab-separated table in the email body. A broker-scale remittance pasted into the body (tab-separated). Tests large-table handling and the total to the cent.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Wide World Importers",
+      "remittanceDate": "2026-10-15",
+      "paymentTotal": 2827906.07,
+      "paymentReference": "WIRE24707174"
+    },
+    "issues": []
+  }
+}

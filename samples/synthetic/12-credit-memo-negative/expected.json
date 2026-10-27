@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "id": "12-credit-memo-negative",
+  "source": "12-credit-memo-negative.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Remittance that nets a credit memo (negative line). One line is -125.00 (a claim credit taken against the payment); the total is net of the credit.",
+  "expected": {
+    "status": "ReviewRequired",
+    "metadata": {
+      "payerName": "Alpine Ski House",
+      "remittanceDate": "2026-10-20",
+      "paymentTotal": 13375.16,
+      "paymentReference": "774533"
+    },
+    "issues": [
+      "payer:negative_amount_paid"
+    ]
+  }
+}

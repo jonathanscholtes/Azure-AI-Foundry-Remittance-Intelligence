@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "06-tiff-no-extension",
+  "source": "06-tiff-no-extension.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Faxed TIFF remittance whose attachment name has no extension. The file type must be recognized from its content (TIFF signature), then read with OCR.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Adventure Works",
+      "remittanceDate": "2026-10-12",
+      "paymentTotal": 19220.63,
+      "paymentReference": "22457514"
+    },
+    "issues": []
+  }
+}
