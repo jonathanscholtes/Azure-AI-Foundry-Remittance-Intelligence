@@ -5,7 +5,7 @@
   "currency": "USD",
   "notes": [
     "Rates for the estimated cost per run (shared/usage.py). Runs store raw usage, so changing a rate here re-prices future runs and never needs reprocessing.",
-    "Source: Azure Retail Prices API (https://prices.azure.com/api/retail/prices), westus3, retrieved 2026-10-21. These are LIST prices; replace them with the customer's negotiated (EA / MCA) rates or the effective rates from Cost Management (cost / quantity per meter) for the pilot.",
+    "Source: Azure Retail Prices API (https://prices.azure.com/api/retail/prices), westus3, retrieved 2026-10-21. These are LIST prices; replace them with your negotiated (EA / MCA) rates or the effective rates from Cost Management (cost / quantity per meter) for the pilot.",
     "Models: Data Zone Standard ('Dz' / 'Std DZ' meters), short-context ('ShortCo') tier. Long-context requests bill at higher 'LongCo' meters; ours are short. GPT-5.6 Terra also has a cache-write meter ('Cd Wr', $2.75 / 1M) that the run usage does not separate, so a run's estimate can be slightly low when its prompt is first cached.",
     "Content Understanding: standard contextualization ('Std Contextualization Tokens'); the advanced rate applies only to analyzers with labeled examples (not used). Decision-1 has a single token meter, used for input and output.",
     "Update 'version' whenever rates change; each run records the version it was priced with."

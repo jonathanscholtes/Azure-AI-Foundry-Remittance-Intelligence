@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "golden-sample-v1.json",
   "title": "Golden-set sample labels (samples/golden/<id>/expected.json)",
-  "description": "Verified expected output for one real remittance, scored by scripts/golden_eval.py. Payment lines live next to it in expected-lines.csv (columns: pro,amount; PRO exactly as written in the source, amount to the cent). The folder is git-ignored: customer files and customer-derived labels are never committed.",
+  "description": "Verified expected output for one real remittance, scored by scripts/golden_eval.py. Payment lines live next to it in expected-lines.csv (columns: pro,amount; PRO exactly as written in the source, amount to the cent). The folder is git-ignored: real messages and the labels made from them are never committed.",
   "type": "object",
   "required": ["schemaVersion", "id", "source", "expected"],
   "properties": {

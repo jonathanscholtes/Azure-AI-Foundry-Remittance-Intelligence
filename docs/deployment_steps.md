@@ -9,7 +9,7 @@ This guide deploys the ACH Remittance Intelligence solution to an Azure subscrip
 - [Prerequisites](#prerequisites)
 - [Step 1 — Clone the Repository](#step-1--clone-the-repository)
 - [Step 2 — Login to Azure](#step-2--login-to-azure)
-- [Step 3 — Configure for the Customer](#step-3--configure-for-the-customer)
+- [Step 3 — Configure for Your Organization](#step-3--configure-for-your-organization)
 - [Step 4 — Deploy Everything](#step-4--deploy-everything)
 - [Step 5 — Verify the Deployment](#step-5--verify-the-deployment)
 - [Private Deployment (Landing Zone)](#private-deployment-landing-zone)
@@ -70,16 +70,16 @@ az login
 az account set --subscription <subscription-id>
 ```
 
-## Step 3 — Configure for the Customer
+## Step 3 — Configure for Your Organization
 
-Settings that differ by customer live in `.env` at the repository root. It is git-ignored, so customer-specific values never enter the repository. Create it before the first deployment and keep a copy somewhere safe: a fresh clone does not have it.
+Settings that differ by organization live in `.env` at the repository root. It is git-ignored, so organization-specific values never enter the repository. Create it before the first deployment and keep a copy somewhere safe: a fresh clone does not have it.
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
 > [!IMPORTANT]
-> Set the PRO settings for every customer whose PRO numbers have a specific length or suffixes. Without them the solution uses neutral rules (6–12 digits, no suffixes): PROs with a suffix are flagged as *not in standard format* instead of being normalized, and runs that would publish a CSV go to review.
+> Set the PRO settings when your PRO numbers have a specific length or suffixes. Without them the solution uses neutral rules (6–12 digits, no suffixes): PROs with a suffix are flagged as *not in standard format* instead of being normalized, and runs that would publish a CSV go to review.
 
 Example (fictional values):
 
@@ -99,7 +99,7 @@ PRO_CREDIT_MEMO_SUFFIX=-CR1
 | `PRO_MIN_DIGITS`, `PRO_MAX_DIGITS` | `6`, `12` | Length of a valid PRO in digits, after suffixes are removed. Leading zeros count and are kept | Lines outside the range are flagged *PRO not in standard format* |
 | `PRO_STRIP_SUFFIXES` | none | Comma-separated trailing suffixes removed before validating, matched case-insensitively at the end, longest first. `001234567X` → `001234567` | The CSV carries the base PRO |
 | `PRO_SUFFIX_EXAMPLES` | none | Comma-separated suffixes payers write on PROs that are *not* stripped, so the analyst knows what to look for | Quoted in the review guidance for non-standard PROs |
-| `PRO_CREDIT_MEMO_SUFFIX` | `-CR1` (generic example) | The suffix the customer uses on credit or debit-memo PROs | Used in the ACH Assurance Expert's instructions |
+| `PRO_CREDIT_MEMO_SUFFIX` | `-CR1` (generic example) | The suffix your organization uses on credit or debit-memo PROs | Used in the ACH Assurance Expert's instructions |
 
 How the settings are applied:
 
@@ -107,7 +107,7 @@ How the settings are applied:
 - They are app settings, so publishing new code never resets them. Running the infrastructure phase **without** `.env` does: it sets them empty (neutral rules) and prints a warning.
 - After a change, run the infrastructure phase (`./scripts/Deploy-Infrastructure.ps1 -Environment <env> -Location <region>`, with the same `-Private` / `-PrivateUi` switches you deployed with) and, for `PRO_CREDIT_MEMO_SUFFIX`, the agents phase (`./scripts/Deploy-FoundryAgents.ps1 -Environment <env>`).
 - A parameter passed to `deploy.ps1`, or a real environment variable, wins over the value in `.env`.
-- These settings describe rules, not who the customer is: put nothing else that identifies them in `.env` beyond the receiving organization's names.
+- These settings describe rules, not who the organization is: put nothing else that identifies it in `.env` beyond the receiving organization's names.
 
 ## Step 4 — Deploy Everything
 
@@ -175,7 +175,7 @@ The script ends with a phase checklist and the service endpoints, including the 
 **Checklist:**
 
 - [ ] The deployment summary shows `[OK]` for every phase
-- [ ] The infrastructure phase printed `PRO rules: …` with the customer's rules (not the *PRO_\* not set* warning, unless the customer needs none)
+- [ ] The infrastructure phase printed `PRO rules: …` with your rules (not the *PRO_\* not set* warning, unless you need none)
 - [ ] The UI loads and the Live Pipeline card shows *live*
 - [ ] An upload reaches **Complete** (CSV published) or **Review Required**, with a timeline
 - [ ] Run Details shows payment lines and a **Cost and usage** card
@@ -257,7 +257,7 @@ Pass the same `-Private` / `-PrivateUi` switches you deployed with whenever you 
 | Data seed or agents phase fails with `403` | New role assignments can take several minutes to apply. The scripts retry; if they still fail, re-run the phase. |
 | Function publish fails or times out (private) | Publishing needs network access to the storage private endpoint. Connect to the VNet or its VPN, check that `<account>.blob.core.windows.net` resolves to a private IP (`Test-NetConnection <account>.blob.core.windows.net -Port 443`), and re-run `./scripts/Deploy-FunctionApp.ps1`. |
 | `az acr build` is slow or hangs | The build context includes `node_modules`. Keep the patterns in `apps/*/.dockerignore` without a trailing slash (`node_modules`, not `node_modules/`). |
-| Many runs go to review with *PROs not in standard format* | The customer's PRO length or suffixes aren't set, or the infrastructure phase ran without `.env` (it printed *PRO_\* not set*). Check the `PRO_*` app settings on the Function app, fix `.env` ([Step 3](#step-3--configure-for-the-customer)) and re-run the infrastructure phase. |
+| Many runs go to review with *PROs not in standard format* | Your PRO length or suffixes aren't set, or the infrastructure phase ran without `.env` (it printed *PRO_\* not set*). Check the `PRO_*` app settings on the Function app, fix `.env` ([Step 3](#step-3--configure-for-your-organization)) and re-run the infrastructure phase. |
 | A run stays **Queued** for more than a minute | Look at **Live Pipeline**: messages counted under *Queued (Service Bus)* with nothing *In flight* mean the Function app isn't reading the queue. Check that it is running and that **Always On** is on: the app has no HTTP triggers, so on a Dedicated plan it idles without Always On and nothing wakes it. Fix with `az functionapp config set -g <resource-group> -n <function-app> --always-on true` and restart the app; queued messages then start within about a minute. Scaling the plan down to a Free or Shared tier (for example by a cost-saving schedule) turns Always On off, and scaling back up does not restore it. Messages in *Dead-letter* failed repeatedly; replay them from Live Pipeline. |
 | UI shows `RBAC: access denied`, or doesn't resolve, with `-PrivateUi` | You are not reaching it through the VNet. Connect the VPN; a secure-access client that tunnels Azure traffic must be off, or bypass `*.azurecontainerapps.io`. |
 | Azure portal can't list private storage containers ("cannot access storage endpoint") | The browser blocks a public site from calling a private IP. On the portal tab: site information icon → **Permissions for this site** → **Local network access** → **Allow**, then reload. Or use `az storage ... --auth-mode login` over the VPN. |

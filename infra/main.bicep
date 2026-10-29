@@ -25,7 +25,7 @@ param maxConcurrentActivities int = 8
 @description('Comma-separated names of the receiving org (payee), for payer-vs-payee resolution. Supplied at deploy time; kept out of the repo.')
 param receivingOrgAliases string = ''
 
-@description('The customer\'s PRO rules (Function app settings PRO_*). Supplied at deploy time from .env; empty means neutral rules (6-12 digits, no suffixes).')
+@description('Organization-specific PRO rules (Function app settings PRO_*). Supplied at deploy time from .env; empty means neutral rules (6-12 digits, no suffixes).')
 param proMinDigits string = ''
 param proMaxDigits string = ''
 param proStripSuffixes string = ''

@@ -3,8 +3,8 @@
 Every change - code, Content Understanding analyzer, prompt, agent, or model version - is measured
 against the same labeled samples, so behavior changes are a number, not a guess.
 
-The golden set lives in samples/golden/ (git-ignored: customer files and customer-derived expected
-results are never committed). One folder per sample:
+The golden set lives in samples/golden/ (git-ignored: real messages and the expected results labeled
+from them are never committed). One folder per sample:
 
     samples/golden/<sample-id>/
         <original>.msg | .eml       the source message, byte for byte

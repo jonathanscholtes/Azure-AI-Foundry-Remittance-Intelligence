@@ -42,7 +42,7 @@ logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 # In pipeline order. Each module declares NAME (the Foundry agent name the Function references),
-# DISPLAY_NAME / PIPELINE_STEP / DESCRIPTION (shown in Foundry so the customer can place the agent in
+# DISPLAY_NAME / PIPELINE_STEP / DESCRIPTION (shown in Foundry so operators can place the agent in
 # the process), INSTRUCTIONS, USES_SEARCH, and optionally OUTPUT_SCHEMA, REASONING_EFFORT, TOOLS
 # (function tools the Function executes) and MODEL ("reasoning" -> the GPT-5.6 Terra deployment).
 AGENT_MODULES = [extraction_agent, resolution_agent, assurance_agent]

@@ -90,7 +90,7 @@ $SUB_ID   = az account show --query id -o tsv
 $ME       = az ad signed-in-user show --query id -o tsv              # deploying user (data-plane access)
 $TAGS     = "workload=ach-remittance-intelligence", "environment=$ENV_NAME"
 
-# Customer settings (see the Deployment Guide, Step 3). Leave empty for neutral rules.
+# Organization settings (see the Deployment Guide, Step 3). Leave empty for neutral rules.
 $RECEIVING_ORG_ALIASES = ""
 $PRO_MIN_DIGITS = ""; $PRO_MAX_DIGITS = ""; $PRO_STRIP_SUFFIXES = ""; $PRO_SUFFIX_EXAMPLES = ""
 ```
@@ -476,8 +476,8 @@ az rest --method put --body "@function.json" `
 | `CONTENT_UNDERSTANDING_ENDPOINT` / `CONTENT_UNDERSTANDING_ANALYZER_ID` | the Foundry endpoint / `ach.remittance.v1` |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | from step 5 |
 | `MAX_MSG_SIZE_MB` / `RECONCILIATION_TOLERANCE` | `25` / `0.01` |
-| `RECEIVING_ORG_ALIASES` | the receiving organization's names (customer setting) |
-| `PRO_MIN_DIGITS`, `PRO_MAX_DIGITS`, `PRO_STRIP_SUFFIXES`, `PRO_SUFFIX_EXAMPLES` | the customer's PRO rules; empty = neutral (6–12 digits, no suffixes) |
+| `RECEIVING_ORG_ALIASES` | the receiving organization's names (organization setting) |
+| `PRO_MIN_DIGITS`, `PRO_MAX_DIGITS`, `PRO_STRIP_SUFFIXES`, `PRO_SUFFIX_EXAMPLES` | your PRO rules; empty = neutral (6–12 digits, no suffixes) |
 
 ```powershell
 $BLOB  = "https://$ST_NAME.blob.core.windows.net/"
@@ -583,7 +583,7 @@ Invoke-WebRequest -Method Put -Uri "$base/contentunderstanding/analyzers/ach.rem
 
 ## 16. Policy Index
 
-The ACH Assurance Expert cites the deduction and cash-application policy from the `ach-policy` index. The loader creates the index (keyword + semantic ranking, no vectorizer) and loads `agents/corpus/*.json`. Replace the neutral corpus with the customer's approved policy before real use (keep it outside the repository).
+The ACH Assurance Expert cites the deduction and cash-application policy from the `ach-policy` index. The loader creates the index (keyword + semantic ranking, no vectorizer) and loads `agents/corpus/*.json`. Replace the neutral corpus with your organization's approved policy before real use (keep it outside the repository).
 
 ```powershell
 python -m pip install -r agents/requirements.txt
@@ -605,7 +605,7 @@ Three prompt agents are created in the project. The Function references them by 
 | `ach-assurance-expert` (ACH Assurance Expert) | `cu-gpt-55` | AI Search (`ach-policy-search` → `ach-policy`) | Cited policy findings for payer issues |
 
 ```powershell
-$env:PRO_CREDIT_MEMO_SUFFIX = ""   # optional customer setting: the credit-memo PRO suffix used in the Assurance Expert's instructions
+$env:PRO_CREDIT_MEMO_SUFFIX = ""   # optional organization setting: the credit-memo PRO suffix used in the Assurance Expert's instructions
 python agents/deploy.py --project-endpoint $PROJECT_ENDPOINT --model-deployment cu-gpt-55 `
   --reasoning-deployment reasoning-gpt-56-terra --search-connection-name ach-policy-search --index-name ach-policy
 ```

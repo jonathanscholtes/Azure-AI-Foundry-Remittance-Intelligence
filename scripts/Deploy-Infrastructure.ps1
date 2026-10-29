@@ -14,7 +14,7 @@ param(
     # Comma-separated names of the receiving org (payee) for payer-vs-payee resolution; kept out of the
     # repo - defaults from the RECEIVING_ORG_ALIASES environment variable.
     [string]$ReceivingOrgAliases = $env:RECEIVING_ORG_ALIASES,
-    # The customer's PRO rules (Function app settings PRO_*); default from .env / the environment. Empty
+    # Organization-specific PRO rules (Function app settings PRO_*); default from .env / the environment. Empty
     # means neutral rules (6-12 digits, no suffixes).
     [string]$ProMinDigits = $env:PRO_MIN_DIGITS,
     [string]$ProMaxDigits = $env:PRO_MAX_DIGITS,

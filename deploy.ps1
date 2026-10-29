@@ -58,7 +58,7 @@ $ErrorActionPreference = "Stop"
 
 Import-Module (Join-Path $PSScriptRoot "scripts/common/DeploymentFunctions.psm1") -Force
 
-# Customer settings (RECEIVING_ORG_ALIASES, PRO_*) come only from a local .env file (git-ignored), never
+# Organization settings (RECEIVING_ORG_ALIASES, PRO_*) come only from a local .env file (git-ignored), never
 # from parameters, so every deploy applies the same values. The infra and agents phases read them from
 # the environment; a real environment variable wins over .env for a one-off override.
 Import-DotEnv (Join-Path $PSScriptRoot '.env')

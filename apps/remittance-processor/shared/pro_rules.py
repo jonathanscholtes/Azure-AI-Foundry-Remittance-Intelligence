@@ -1,4 +1,4 @@
-"""PRO number rules that differ by customer, read from app settings so they stay out of code.
+"""PRO number rules that differ by organization, read from app settings so they stay out of code.
 
     PRO_MIN_DIGITS / PRO_MAX_DIGITS  length of a valid PRO after suffixes are removed (default 6 / 12)
     PRO_STRIP_SUFFIXES               comma-separated trailing suffixes removed before validating

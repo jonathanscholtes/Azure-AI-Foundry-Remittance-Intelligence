@@ -28,7 +28,7 @@ param intakeDecisionDeployment string = ''
 param assuranceAgentName string = ''
 @description('Comma-separated names of the receiving org (payee) used to flag/resolve payer-vs-payee extraction. Supplied at deploy time so the value is not committed to the repo.')
 param receivingOrgAliases string = ''
-@description('The customer\'s PRO rules; empty means neutral rules (6-12 digits, no suffixes). Supplied at deploy time.')
+@description('Organization-specific PRO rules; empty means neutral rules (6-12 digits, no suffixes). Supplied at deploy time.')
 param proMinDigits string = ''
 param proMaxDigits string = ''
 param proStripSuffixes string = ''

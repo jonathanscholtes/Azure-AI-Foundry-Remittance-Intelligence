@@ -209,7 +209,7 @@ Add `-Private -PrivateUi` to deploy into an existing landing-zone VNet with a VP
 
 | What | Where |
 |---|---|
-| Your organization's names and PRO rules | `.env` (git-ignored) → Function app settings. See [Deployment Guide, Step 3](docs/deployment_steps.md#step-3--configure-for-the-customer) |
+| Your organization's names and PRO rules | `.env` (git-ignored) → Function app settings. See [Deployment Guide, Step 3](docs/deployment_steps.md#step-3--configure-for-your-organization) |
 | Rates for the per-run cost estimate | [apps/remittance-processor/config/pricing.json](apps/remittance-processor/config/pricing.json): ships with Azure list prices; replace them with your agreement's rates |
 | Deployment options (region, sizes, networking) | `deploy.ps1` parameters. See the [Deployment Guide](docs/deployment_steps.md#optional-parameters) |
 

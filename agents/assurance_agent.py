@@ -4,7 +4,7 @@ Foundry prompt agent with the AI Search policy index as a tool. Receives only th
 triage leaves, each with its exact lines, and returns one cited finding per issue.
 
 The example credit-memo PRO in the instructions uses PRO_CREDIT_MEMO_SUFFIX (from ``.env`` at deploy
-time), so a deployment for a specific customer gets its own convention without it being in the
+time), so each deployment gets its own convention without it being in the
 repository.
 """
 

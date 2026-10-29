@@ -86,7 +86,7 @@ function Set-Utf8Console {
 }
 
 function Import-DotEnv {
-    # Load the repo's .env (git-ignored) so customer-specific settings - RECEIVING_ORG_ALIASES, PRO_* -
+    # Load the repo's .env (git-ignored) so organization-specific settings - RECEIVING_ORG_ALIASES, PRO_* -
     # stay out of the repo. A real environment variable or an explicit parameter always wins.
     param([string]$Path = (Join-Path (Resolve-RepoRoot) '.env'))
     if (-not (Test-Path $Path)) { return }
