@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
+from typing import Literal
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, Path, Query, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from pydantic import BaseModel, Field, ValidationError
 
-from .repository import SUPPORTED_EXTENSIONS, LedgerRepository, QueueUnavailable, get_repository
+from .repository import SUPPORTED_EXTENSIONS, LedgerRepository, QueueUnavailable, ReviewConflict, get_repository
 from .settings import get_settings
+from .transforms import REVIEW_OUTCOMES
 
 app = FastAPI(title="ACH Remittance Intelligence API", version="2.0.0")
 
@@ -181,3 +186,94 @@ def weekly_summary(week: str | None = Query(default=None), repository: LedgerRep
         iso_year, iso_week, _ = now.isocalendar()
         week = f"{iso_year}-W{iso_week:02d}"
     return repository.weekly_summary(week)
+
+
+# --- Analyst review (the ACH Review Expert agent, via the APIM MCP server) ----------------------
+# APIM declares these routes as the ACH Review API (infra/apim/review-mcp.bicep) and exports them as
+# the review MCP server; each operation_id is the name of an MCP tool the agent calls.
+
+SOURCE_ID_RE = re.compile(r"^[a-z0-9-]{1,40}$")
+
+review = APIRouter(prefix="/api/review", tags=["review"])
+
+
+class CompleteReview(BaseModel):
+    reviewer: str = Field(min_length=2, max_length=120, description="Name or email of the analyst signing off the review.")
+    outcome: Literal[REVIEW_OUTCOMES] = Field(
+        description="approved: the extracted payment lines are correct (header details such as the payer may have been "
+                    "confirmed); releases the CSV. handled_manually: lines are wrong, cash applied manually outside this "
+                    "system; no CSV. rejected: no cash applied (not a remittance, duplicate, or sent back to the payer); "
+                    "no CSV.")
+    notes: str = Field(min_length=3, max_length=2000, description="What the analyst decided and why, for the audit trail.")
+
+
+@review.get("/runs", operation_id="list_runs", summary="List remittance runs (open/completed reviews, in-flight, failed)")
+def review_list_runs(
+    review_state: Literal["open", "completed"] | None = Query(default=None, alias="review",
+                                                              description="open = awaiting manual review; completed = signed off"),
+    status: str | None = Query(default=None, description="Run status: InFlight, Completed, ReviewRequired, Failed or DuplicateSkipped"),
+    payer: str | None = Query(default=None, description="Exact payer name"),
+    q: str | None = Query(default=None, description="Text in payer, file name, subject, processing id or payment reference"),
+    date_from: str | None = Query(default=None, alias="from", description="Processed on or after (YYYY-MM-DD)"),
+    date_to: str | None = Query(default=None, alias="to", description="Processed on or before (YYYY-MM-DD)"),
+    limit: int = Query(default=25, ge=1, le=200),
+    repository: LedgerRepository = Depends(repo),
+):
+    items = repository.list_review_runs(review=review_state, status=status, payer=payer, search=q,
+                                        date_from=date_from, date_to=date_to, limit=limit)
+    return {"count": len(items), "items": items}
+
+
+@review.get("/runs/{processing_id}", operation_id="get_run", summary="Get one run's review case")
+def review_get_run(processing_id: str = Path(description="Processing id, e.g. REM-0123456789ABCDEF0123"),
+                   repository: LedgerRepository = Depends(repo)):
+    case = repository.get_review_case(processing_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Remittance not found.")
+    return case
+
+
+@review.get("/runs/{processing_id}/sources/{source_id}/text", operation_id="get_source_text",
+            summary="Read the original email or a document's text, one page at a time")
+def review_get_source_text(
+    processing_id: str = Path(description="Processing id"),
+    source_id: str = Path(description="Source id from the case's sources list: message-body or doc-NNN"),
+    offset: int = Query(default=0, ge=0, description="Character offset; use nextOffset from the previous page"),
+    repository: LedgerRepository = Depends(repo),
+):
+    if not SOURCE_ID_RE.match(source_id):
+        raise HTTPException(status_code=400, detail="Invalid source id.")
+    page = repository.get_source_text(processing_id, source_id, offset)
+    if page is None:
+        raise HTTPException(status_code=404, detail="Source not found for this remittance.")
+    return page
+
+
+@review.post("/runs/{processing_id}/complete", operation_id="complete_review",
+             summary="Mark a run's manual review as completed")
+def review_complete(body: CompleteReview | str, processing_id: str = Path(description="Processing id"),
+                    repository: LedgerRepository = Depends(repo)):
+    # APIM's MCP export types the request body as a string, so the tool call arrives as a JSON string
+    # holding the object ("{\"reviewer\": ...}"); accept that form too, with the same validation.
+    if isinstance(body, str):
+        try:
+            body = CompleteReview.model_validate_json(body)
+        except ValidationError as exc:
+            raise RequestValidationError(exc.errors(include_url=False))
+    try:
+        result = repository.complete_review(processing_id, reviewer=body.reviewer.strip(), outcome=body.outcome,
+                                            notes=body.notes.strip())
+    except ReviewConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if not result:
+        raise HTTPException(status_code=404, detail="Remittance not found.")
+    return result
+
+
+@review.get("/pipeline", operation_id="get_pipeline_status", summary="What is processing right now")
+def review_pipeline(window: int = Query(default=60, ge=15, le=1440, description="Look-back window in minutes"),
+                    repository: LedgerRepository = Depends(repo)):
+    return repository.pipeline_status(window_minutes=window)
+
+
+app.include_router(review)

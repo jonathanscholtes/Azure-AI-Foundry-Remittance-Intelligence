@@ -9,12 +9,14 @@ param(
     [string]$ModelDeployment,
     [string]$SearchConnectionName,
     [string]$IndexName,
+    # Foundry connection to the APIM review MCP server (created by Deploy-Apim.ps1) for the ACH Review Expert.
+    [string]$ReviewMcpConnectionName = "ach-review-mcp",
     [int]$MaxAttempts = 6
 )
 
-# Creates a new version of each Foundry agent (agents/deploy.py): ACH Extraction Expert and ACH Assurance
-# Expert. The Function references agents by NAME (EXTRACTION_AGENT_NAME / ASSURANCE_AGENT_NAME, set by infra),
-# so the latest version is used with no id injection.
+# Creates a new version of each Foundry agent (agents/deploy.py). The Function references the pipeline
+# agents by NAME (EXTRACTION_AGENT_NAME / ASSURANCE_AGENT_NAME, set by infra), so the latest version is used
+# with no id injection. The ACH Review Expert (Copilot) is deployed only once its MCP connection exists.
 
 $ErrorActionPreference = "Stop"
 Import-Module (Join-Path $PSScriptRoot "common/DeploymentFunctions.psm1") -Force
@@ -55,6 +57,7 @@ for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         --model-deployment       $ModelDeployment `
         --search-connection-name $SearchConnectionName `
         --index-name             $IndexName `
+        --review-mcp-connection-name $ReviewMcpConnectionName `
         @reasoningArgs
     if ($LASTEXITCODE -eq 0) {
         Write-Host "[agents] Agents deployed; the Function resolves $agentName (latest versions) by name." -ForegroundColor Green

@@ -43,10 +43,12 @@ import {
   RESOLUTION_REASON_LABELS,
   resolutionSkipText,
   SOURCE_ROLE_LABELS,
+  isReviewed,
   isTerminal,
   money,
   number,
-  statusAppearance,
+  REVIEW_OUTCOME_LABELS,
+  runBadge,
   statusLabel,
   warningLabel,
 } from "../format.js";
@@ -113,8 +115,23 @@ function Field({ label, value, tone }) {
   );
 }
 
+// The analyst's sign-off (ACH Review Copilot) is a timeline event that leaves the state unchanged.
+const REVIEW_EVENTS = { review_completed: "Review completed" };
+
+function eventLabel(event) {
+  return REVIEW_EVENTS[event.event] || statusLabel(event.newState);
+}
+
 function eventSummary(event) {
   const d = event.details || {};
+  if (REVIEW_EVENTS[event.event]) {
+    return [
+      `${REVIEW_OUTCOME_LABELS[d.outcome] || d.outcome} by ${d.reviewer}`,
+      d.channel === "review-agent" ? "via ACH Review Copilot" : d.channel,
+      d.csvBlobUri ? "CSV released" : "no CSV",
+      d.notes,
+    ].filter(Boolean).join(" · ");
+  }
   const parts = [];
   if (d.stream) parts.push(`stream ${d.stream}`);
   if (d.queueLatencyMs != null) parts.push(`queue wait ${duration(d.queueLatencyMs)}`);
@@ -438,8 +455,8 @@ export default function RunDetailsPage() {
             </Button>
             <div className={styles.titleRow}>
               <Title3>{meta.payerName || run.payerName || run.sourceName || "Remittance"}</Title3>
-              <Badge appearance="filled" color={isTerminal(run.status) ? statusAppearance(run.status) : "brand"}>
-                {statusLabel(isTerminal(run.status) ? run.status : run.currentState || run.status)}
+              <Badge appearance="filled" color={runBadge(run).color}>
+                {runBadge(run).label}
               </Badge>
               {run.stream && <Badge appearance="outline">{run.stream}</Badge>}
             </div>
@@ -456,7 +473,8 @@ export default function RunDetailsPage() {
                 {run.csvFileName}
               </Button>
             )}
-            {isTerminal(run.status) && run.status !== "Completed" && (
+            {/* A processed run or a signed-off review is finished: reprocessing would supersede its CSV and sign-off. */}
+            {isTerminal(run.status) && run.status !== "Completed" && !isReviewed(run) && (
               <Button icon={<ArrowClockwise20Regular />} onClick={reprocess} disabled={reprocessing}>
                 Reprocess
               </Button>
@@ -497,6 +515,19 @@ export default function RunDetailsPage() {
               source message is preserved; use Reprocess after resolving the cause.
             </MessageBarBody>
           </MessageBar>
+        )}
+        {isReviewed(run) && (
+          <div className={styles.section} style={{ marginTop: 10 }}>
+            <Subtitle2>Review sign-off</Subtitle2>
+            <MessageBar intent="success">
+              <MessageBarBody>
+                {REVIEW_OUTCOME_LABELS[run.reviewOutcome] || run.reviewOutcome} by <strong>{run.reviewedBy}</strong>{" "}
+                on {dateTime(run.reviewedAtUtc)}
+                {run.reviewChannel === "review-agent" ? " (ACH Review Copilot)" : ""}.
+                {run.reviewNotes && <> {run.reviewNotes}</>}
+              </MessageBarBody>
+            </MessageBar>
+          </div>
         )}
         {reviewReasons.length > 0 && (
           <div className={styles.section} style={{ marginTop: 10 }}>
@@ -607,7 +638,7 @@ export default function RunDetailsPage() {
                 <Text size={200} className={styles.muted}>
                   {dateTime(e.eventTimeUtc)}
                 </Text>
-                <Text weight="semibold">{statusLabel(e.newState)}</Text>
+                <Text weight="semibold">{eventLabel(e)}</Text>
                 <Text size={200}>{duration(e.durationMs ?? e.details?.durationMs)}</Text>
                 <Text size={200}>{eventSummary(e)}</Text>
               </div>

@@ -11,7 +11,7 @@ import {
   MessageBarBody,
 } from "@fluentui/react-components";
 import { ArrowDownload20Regular } from "@fluentui/react-icons";
-import { money, number, statusAppearance } from "../format.js";
+import { money, number, runBadge } from "../format.js";
 import { api } from "../api.js";
 
 const useStyles = makeStyles({
@@ -49,7 +49,7 @@ export default function SummaryCard({ run }) {
     <Card>
       <CardHeader
         header={<Title3>{meta.payerName || run.payerName || "Unknown payer"}</Title3>}
-        description={<Badge appearance="filled" color={statusAppearance(run.status)}>{run.status}</Badge>}
+        description={<Badge appearance="filled" color={runBadge(run).color}>{runBadge(run).label}</Badge>}
         action={
           run.csvFileName ? (
             <Button

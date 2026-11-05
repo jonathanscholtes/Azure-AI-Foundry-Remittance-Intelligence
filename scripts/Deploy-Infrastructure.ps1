@@ -53,49 +53,6 @@ $template = Join-Path $repoRoot "infra/main.bicep"
 if (-not $ResourceGroup) { $ResourceGroup = "rg-$ProjectName-$Environment" }
 if ($Subscription) { az account set --subscription $Subscription | Out-Null }
 
-# ── Subnet CIDR helpers (private mode: allocate free /26 Function and /23 ACA subnets) ──
-function ConvertTo-UInt32Ip([string]$Address) {
-    $ip = [System.Net.IPAddress]::Parse($Address)
-    if ($ip.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) {
-        throw "Subnet allocation requires an IPv4 address, got '$Address'."
-    }
-    $b = $ip.GetAddressBytes(); [Array]::Reverse($b)
-    return [BitConverter]::ToUInt32($b, 0)
-}
-function ConvertFrom-UInt32Ip([uint32]$Address) {
-    $b = [BitConverter]::GetBytes($Address); [Array]::Reverse($b)
-    return ([System.Net.IPAddress]::new($b)).ToString()
-}
-function Get-CidrRange([string]$Cidr) {
-    $p = $Cidr.Split('/')
-    if ($p.Count -ne 2 -or [int]$p[1] -lt 1 -or [int]$p[1] -gt 30) { throw "Unsupported IPv4 CIDR '$Cidr'." }
-    $start = ConvertTo-UInt32Ip $p[0]
-    $size = [uint64][math]::Pow(2, 32 - [int]$p[1])
-    return @{ Start = [uint64]$start; End = [uint64]$start + $size - 1 }
-}
-# First aligned /$NewPrefix block inside $VnetCidr that doesn't overlap any $UsedCidrs.
-function Get-FreeSubnetCidr([string]$VnetCidr, [string[]]$UsedCidrs, [int]$NewPrefix = 26) {
-    $v = Get-CidrRange $VnetCidr
-    $used = @($UsedCidrs | Where-Object { $_ } | ForEach-Object { Get-CidrRange $_ })
-    $step = [uint64][math]::Pow(2, 32 - $NewPrefix)
-    $start = [uint64]([math]::Ceiling($v.Start / $step) * $step)
-    for ($s = $start; ($s + $step - 1) -le $v.End; $s += $step) {
-        $e = $s + $step - 1
-        $overlap = $false
-        foreach ($u in $used) { if ($s -le $u.End -and $u.Start -le $e) { $overlap = $true; break } }
-        if (-not $overlap) { return "$(ConvertFrom-UInt32Ip ([uint32]$s))/$NewPrefix" }
-    }
-    throw "No free /$NewPrefix block available in VNet $VnetCidr."
-}
-# Stable short token so delegated subnet names are unique per deployment within a SHARED landing zone
-# (subscription + project + environment + location), yet identical across re-runs so they are reused.
-function Get-DeploymentToken([string]$Seed) {
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    try { $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Seed)) }
-    finally { $sha.Dispose() }
-    return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 10)
-}
-
 if ($Private) {
     Write-Phase "Resolving private landing zone (tag '$LandingZoneTag')"
     $landingZoneRg = az group list --tag $LandingZoneTag --query "[0].name" -o tsv 2>$null
@@ -133,7 +90,8 @@ if ($Private) {
     }
 
     $reservedNames = @('GatewaySubnet', 'AzureBastionSubnet', 'AzureFirewallSubnet', 'AzureFirewallManagementSubnet', 'RouteServerSubnet')
-    $candidateNames = @($subnetNames | Where-Object { $reservedNames -notcontains $_ })
+    # snet-apim-* is API Management's own subnet (Deploy-Apim.ps1): undelegated, but never a PE subnet.
+    $candidateNames = @($subnetNames | Where-Object { $reservedNames -notcontains $_ -and $_ -notlike 'snet-apim-*' })
 
     # Private endpoint subnet: prefer 'snet-pe', else the first non-delegated candidate.
     if (-not $PrivateEndpointSubnetResourceId) {

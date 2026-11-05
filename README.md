@@ -194,12 +194,13 @@ Add `-Private -PrivateUi` to deploy into an existing landing-zone VNet with a VP
 
 | Guide | For |
 |---|---|
-| [Deployment Guide](docs/deployment_steps.md) | Prerequisites, settings, the six phases and their parameters, private deployment, verification, troubleshooting, teardown |
+| [Deployment Guide](docs/deployment_steps.md) | Prerequisites, settings, the deployment phases and their parameters, private deployment, verification, troubleshooting, teardown |
 | [Manual Deployment](docs/manual-deployment.md) | Every resource, setting and role assignment, to deploy without the script or adapt it to your landing zone |
 | [infra/README.md](infra/README.md) | Networking, identities and roles, firewall egress |
 | [Developer Guide](docs/developer-guide.md) | For changing the code: tests, and running the Function app, API or UI against a deployed environment |
 | [Golden-Set Evaluation](docs/evaluation.md) | Measuring accuracy on real messages checked by a person |
 | [Load Testing](docs/load-testing.md) | Replaying messages from a folder at a chosen rate to measure throughput, throttling and queue behavior |
+| [ACH Review Expert](docs/review-agent.md) | The optional Microsoft 365 Copilot agent that answers questions about runs, reviews flagged runs against the original email and documents, and marks reviews completed (through an API Management MCP server) |
 
 > **Cost:** the models, Content Understanding, AI Search and the other services are billable. Each run records its own usage and estimated cost.
 

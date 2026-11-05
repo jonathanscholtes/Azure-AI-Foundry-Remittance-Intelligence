@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import re
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 PROCESSING_ID_RE = re.compile(r"^REM-[0-9A-F]{20}$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -49,7 +52,17 @@ SUMMARY_FIELDS = (
     "cuCalls", "cuPages", "agentCalls", "decisionCalls", "aiTokens", "estimatedCost", "estimatedCostComplete",
     # Run classification (message class A-D / none, outcome bucket).
     "messageClass", "outcome",
+    # Analyst sign-off on a ReviewRequired run (written by the review endpoints, never by the Function).
+    "reviewStatus", "reviewedBy", "reviewedAtUtc", "reviewOutcome", "reviewNotes", "reviewChannel",
 )
+
+# How an analyst closed a ReviewRequired run.
+# approved releases the downstream CSV; handled_manually / rejected do not.
+REVIEW_OUTCOMES = ("approved", "handled_manually", "rejected")
+REVIEW_STATES = ("open", "completed")
+SOURCE_PAGE_CHARS = 8000
+MAX_CASE_LINES = 100
+BODY_SOURCE_ID = "message-body"
 
 
 def entity_to_summary(entity: dict) -> dict:
@@ -228,6 +241,150 @@ def pipeline_snapshot(runs, *, now: datetime, window_minutes: int = 60, bucket_m
         "throttleRetries": sum(r.get("throttleRetries") or 0 for _, r in recent),
         "buckets": buckets,
     }
+
+
+def _amount(value) -> Decimal | None:
+    if value is None or isinstance(value, bool):
+        return None
+    text = str(value).strip().replace("$", "").replace(",", "")
+    if text.startswith("(") and text.endswith(")"):
+        text = "-" + text[1:-1].strip()
+    try:
+        amount = Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+    return amount if amount.is_finite() else None
+
+
+def payment_csv(lines: list) -> bytes:
+    """The downstream CSV (PRO, amount; no header), the same format the pipeline writes for clean runs.
+
+    Raises ValueError when a line has no PRO or amount: such a run cannot be approved.
+    """
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, lineterminator="\n")
+    if not lines:
+        raise ValueError("The run has no payment lines.")
+    for number, line in enumerate(lines, start=1):
+        amount = _amount(line.get("amountPaid"))
+        if not line.get("proInvoiceNumber") or amount is None:
+            raise ValueError(f"Payment line {number} has no PRO or amount.")
+        writer.writerow([line["proInvoiceNumber"], format(amount.quantize(Decimal("0.01")), "f")])
+    return output.getvalue().encode("utf-8")
+
+
+def csv_file_name(metadata: dict) -> str:
+    """payer_date_total.csv, the pipeline's downstream file name."""
+
+    def piece(value, fallback: str) -> str:
+        return re.sub(r"[^A-Za-z0-9]+", "-", str(value or "").strip()).strip("-")[:40] or fallback
+
+    date = str(metadata.get("remittanceDate") or "").strip()[:10]
+    total = _amount(metadata.get("paymentTotal"))
+    return "_".join((
+        piece(metadata.get("payerName"), "UNKNOWN-PAYER"),
+        date if DATE_RE.fullmatch(date) else "NO-DATE",
+        format(total.quantize(Decimal("0.01")), "f") if total is not None else "NO-TOTAL",
+    )) + ".csv"
+
+
+def review_state(summary: dict) -> str | None:
+    """'open' / 'completed' for a ReviewRequired run; None for any other status."""
+    if summary.get("status") != "ReviewRequired":
+        return None
+    return "completed" if summary.get("reviewStatus") == "Completed" else "open"
+
+
+def review_run_row(summary: dict) -> dict:
+    """One compact row per run for the review agent's list tool."""
+    keys = ("processingId", "runId", "status", "currentState", "payerName", "remittanceDate", "paymentReference",
+            "paymentTotal", "calculatedPaymentTotal", "totalDifference", "isReconciled", "amountAtRisk", "lineCount",
+            "subject", "senderEmail", "sourceName", "submittedAtUtc", "processedAtUtc", "assuranceDecision",
+            "assuranceHeadline", "reviewedBy", "reviewedAtUtc", "reviewOutcome")
+    row = {key: summary.get(key) for key in keys}
+    row["reviewState"] = review_state(summary)
+    row["reviewReasons"] = summary.get("reviewReasons") if summary.get("reviewReasons") is not None else summary.get("warnings")
+    return row
+
+
+def _finding(finding: dict) -> dict:
+    return {
+        "issueId": finding.get("issueId"),
+        "title": finding.get("title") or finding.get("headline"),
+        "decision": finding.get("decision"),
+        "amountAtRisk": finding.get("amountAtRisk"),
+        "confidence": finding.get("confidence"),
+        "rationale": finding.get("rationale"),
+        "recommendedAction": finding.get("recommendedAction"),
+        "citations": [
+            {"policyId": c.get("policyId"), "title": c.get("title")}
+            for c in finding.get("citations") or [] if isinstance(c, dict)
+        ],
+    }
+
+
+def review_case(run: dict) -> dict:
+    """Everything an analyst (or the review agent) needs to decide a run, without document bytes.
+
+    ``run`` is the repository's get_run() view: the ledger summary with the final result and the
+    manifest's message header already merged in.
+    """
+    message = run.get("message") or {}
+    assurance = run.get("assurance") or {}
+    resolution = run.get("resolution") or {}
+    lines = run.get("paymentLines") or []
+    sources = [{"sourceId": BODY_SOURCE_ID, "name": "Email body", "kind": "message_body"}] if message.get("hasBody") else []
+    for item in run.get("candidateResults") or []:
+        if item.get("candidateId") == BODY_SOURCE_ID:
+            continue
+        sources.append({
+            "sourceId": item.get("candidateId"),
+            "name": item.get("name"),
+            "kind": item.get("strategy"),
+            "lineCount": item.get("lineCount"),
+            "warnings": item.get("warnings") or [],
+        })
+    case = review_run_row(run)
+    case.update({
+        "warnings": run.get("warnings") or [],
+        "review": {key: run.get(key) for key in ("reviewStatus", "reviewedBy", "reviewedAtUtc", "reviewOutcome",
+                                                  "reviewNotes", "reviewChannel")},
+        "message": {key: message.get(key) for key in ("subject", "senderName", "senderEmail", "sentDate")},
+        "manualReviewItems": run.get("manualReviewItems") or [],
+        "assurance": {
+            "decision": assurance.get("decision"),
+            "headline": assurance.get("headline"),
+            "recommendedAction": assurance.get("recommendedAction"),
+            "findings": [_finding(f) for f in assurance.get("findings") or [] if isinstance(f, dict)],
+        } if assurance else None,
+        "resolution": {key: resolution.get(key) for key in ("outcome", "explanation", "threadKind")} if resolution else None,
+        "paymentLines": [
+            {key: line.get(key) for key in ("proInvoiceNumber", "rawProInvoiceNumber", "amountPaid", "invoiceDate",
+                                            "discountAmount", "adjustmentAmount", "warnings")}
+            for line in lines[:MAX_CASE_LINES] if isinstance(line, dict)
+        ],
+        "paymentLinesTruncated": len(lines) > MAX_CASE_LINES,
+        "sources": sources,
+    })
+    return case
+
+
+def page_text(source_id: str, text: str, offset: int) -> dict:
+    offset = max(0, int(offset or 0))
+    page = text[offset: offset + SOURCE_PAGE_CHARS]
+    end = offset + len(page)
+    return {"sourceId": source_id, "length": len(text), "offset": offset, "text": page,
+            "nextOffset": end if end < len(text) else None}
+
+
+def analysis_markdown(raw: dict) -> str:
+    """The text Content Understanding read from a document (all parts of a multi-part result)."""
+    result = (raw or {}).get("result") or {}
+    texts = []
+    for part in [result] + list(result.get("parts") or []):
+        inner = (part or {}).get("result", part) or {}
+        texts += [c["markdown"] for c in inner.get("contents") or [] if isinstance(c, dict) and isinstance(c.get("markdown"), str)]
+    return "\n".join(texts)
 
 
 def artifact_allowed(container: str, path: str, processing_id: str) -> bool:

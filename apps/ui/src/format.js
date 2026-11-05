@@ -21,6 +21,7 @@ export function dateTime(iso) {
 export function statusAppearance(status) {
   switch (status) {
     case "Completed":
+    case "Reviewed":
       return "success";
     case "ReviewRequired":
       return "warning";
@@ -37,6 +38,39 @@ export const TERMINAL = new Set(["Completed", "ReviewRequired", "Failed", "Dupli
 
 export function isTerminal(status) {
   return TERMINAL.has(status);
+}
+
+// A review run an analyst has signed off (ACH Review Expert) shows as "Reviewed"; its pipeline status
+// stays ReviewRequired so review-rate metrics are unchanged.
+export function isReviewed(run) {
+  return run?.status === "ReviewRequired" && run?.reviewStatus === "Completed";
+}
+
+export const REVIEW_OUTCOME_LABELS = {
+  approved: "Approved",
+  handled_manually: "Handled manually",
+  rejected: "Rejected",
+  // sign-offs recorded before the outcomes were renamed
+  applied_as_extracted: "Approved",
+  applied_with_corrections: "Handled manually",
+  not_applied: "Rejected",
+};
+
+export function isOpenReview(run) {
+  return Boolean(run && (run.requiresReview || run.status === "ReviewRequired") && !isReviewed(run));
+}
+
+// The outcome to show for a finished run ("Reviewed" for a signed-off review), or null while in flight.
+export function terminalStatus(run) {
+  if (!run || !isTerminal(run.status)) return null;
+  return isReviewed(run) ? "Reviewed" : run.status;
+}
+
+// Badge label + color for a run: its outcome when finished, the live pipeline state otherwise.
+export function runBadge(run) {
+  const terminal = terminalStatus(run);
+  if (terminal) return { label: statusLabel(terminal), color: statusAppearance(terminal) };
+  return { label: statusLabel(run?.currentState || run?.status), color: "brand" };
 }
 
 // Pipeline steps shown in the UI; each maps the detailed Durable states recorded by the Function.
@@ -59,6 +93,7 @@ const STATUS_LABELS = {
   Queued: "Queued",
   Completed: "Processed",
   ReviewRequired: "Needs Review",
+  Reviewed: "Reviewed",
   Failed: "Failed",
   DuplicateSkipped: "Duplicate",
   AssuranceReview: "Agent review",

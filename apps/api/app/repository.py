@@ -2,8 +2,9 @@
 submits work to the Service Bus intake queue.
 
 This is the single seam the UI depends on. Swapping Table Storage for Cosmos DB later means
-providing another class with the same methods - no API/UI change. The API never writes governed
-run state (the Function's Recorder does); it only writes the raw source blob and the queue message.
+providing another class with the same methods - no API/UI change. The API never writes pipeline
+run state (the Function's Recorder does); it writes the raw source blob, the queue message, and
+an analyst's sign-off on a ReviewRequired run (review fields on the run row + one timeline event).
 """
 
 from __future__ import annotations
@@ -21,16 +22,25 @@ from .settings import get_settings
 from .storage import blob_service, events_table, intake_bus, ledger_table
 from .transforms import (
     ARTIFACT_CONTAINERS,
+    BODY_SOURCE_ID,
     DATE_RE,
     KNOWN_STATES,
     PROCESSING_ID_RE,
+    REVIEW_STATES,
     WEEK_RE,
     aggregate,
+    analysis_markdown,
     artifact_allowed,
+    csv_file_name,
     entity_to_summary,
     event_entity_to_event,
     latest_per_processing,
+    page_text,
+    payment_csv,
     pipeline_snapshot,
+    review_case,
+    review_run_row,
+    review_state,
 )
 
 SUPPORTED_EXTENSIONS = (".msg", ".eml")
@@ -41,6 +51,10 @@ logger = logging.getLogger("ach_api")
 
 class QueueUnavailable(RuntimeError):
     pass
+
+
+class ReviewConflict(RuntimeError):
+    """The run is not open for review (wrong status, already completed, or changed concurrently)."""
 
 
 def _safe_name(filename: str) -> str:
@@ -406,6 +420,143 @@ class LedgerRepository:
             except Exception:
                 logger.warning("entity delete failed pk=%s rk=%s", entity.get("PartitionKey"), entity.get("RowKey"))
         return deleted
+
+    # --- analyst review ------------------------------------------------------
+
+    def list_review_runs(self, review=None, status=None, payer=None, search=None, date_from=None, date_to=None, limit=50):
+        """Runs for the review agent; review='open'/'completed' narrows to ReviewRequired runs."""
+        if review in REVIEW_STATES:
+            status = "ReviewRequired"
+        runs = self.list_runs(status=status, date_from=date_from, date_to=date_to, payer=payer, search=search, limit=1000)
+        rows = [review_run_row(run) for run in runs]
+        if review in REVIEW_STATES:
+            rows = [row for row in rows if row["reviewState"] == review]
+        return rows[: max(1, min(int(limit), 200))]
+
+    def get_review_case(self, processing_id: str):
+        run = self.get_run(processing_id)
+        return review_case(run) if run else None
+
+    def _read_text(self, blob_uri: str | None) -> str:
+        container, _, name = (blob_uri or "").partition("/")
+        if not container or not name:
+            return ""
+        try:
+            return self._blob.get_blob_client(container, name).download_blob().readall().decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+
+    def get_source_text(self, processing_id: str, source_id: str, offset: int = 0):
+        """A page of the text of one source: the email body, or what was read from a document."""
+        found = self._latest(processing_id)
+        if not found:
+            return None
+        summary, _ = found
+        manifest = self._read_json(summary.get("manifestBlobUri") or f"manifests/{processing_id}.json") or {}
+        if source_id == BODY_SOURCE_ID:
+            message = manifest.get("message") or {}
+            header = "\n".join(
+                f"{label}: {message.get(key)}"
+                for label, key in (("Subject", "subject"), ("From", "senderName"), ("Sender email", "senderEmail"), ("Sent", "sentDate"))
+                if message.get(key)
+            )
+            body = self._read_text(f"bodies/{processing_id}/message-body.txt")
+            if not body and not header:
+                return None
+            return page_text(source_id, f"{header}\n\n{body}".strip(), offset)
+
+        final = self._read_json(summary.get("finalResultBlobUri")) or {}
+        item = next((c for c in final.get("candidateResults") or [] if c.get("candidateId") == source_id), None)
+        candidate = next((c for c in manifest.get("candidates") or [] if c.get("candidateId") == source_id), None)
+        if item is None and candidate is None:
+            return None
+        # Content Understanding's reading of a PDF/image/Office file, else the stored text payload
+        # (embedded emails, text attachments), else the lines extraction found (spreadsheets).
+        text = analysis_markdown(self._read_json((item or {}).get("rawAnalysisBlobUri")) or {})
+        if not text and candidate and str(candidate.get("payloadContentType") or candidate.get("contentType") or "").startswith("text"):
+            text = self._read_text(candidate.get("payloadBlobUri") or candidate.get("blobUri"))
+        if not text:
+            normalized = self._read_json((item or {}).get("normalizedExtractionBlobUri")) or {}
+            lines = normalized.get("paymentLines") or []
+            if lines:
+                text = "No document text is stored for this source; the payment lines read from it are:\n" + "\n".join(
+                    f"{line.get('proInvoiceNumber')}\t{line.get('amountPaid')}" for line in lines
+                )
+        return page_text(source_id, text, offset)
+
+    def complete_review(self, processing_id: str, *, reviewer: str, outcome: str, notes: str, channel: str = "review-agent"):
+        """Record an analyst's sign-off on the latest run. Raises ReviewConflict unless it is open."""
+        if not PROCESSING_ID_RE.match(processing_id):
+            return None
+        entities = self._runs_for(processing_id)
+        if not entities:
+            return None
+        entity = latest_per_processing(entities)[0]
+        state = review_state(entity_to_summary(entity))
+        if state is None:
+            raise ReviewConflict(f"Run is {entity.get('status')}, not ReviewRequired.")
+        if state == "completed":
+            raise ReviewConflict(f"Review was already completed by {entity.get('reviewedBy')} at {entity.get('reviewedAtUtc')}.")
+
+        from azure.core import MatchConditions
+        from azure.core.exceptions import ResourceModifiedError
+        from azure.data.tables import UpdateMode
+
+        run_id = entity["RowKey"]
+        now = datetime.now(timezone.utc).isoformat()
+        review = {"reviewStatus": "Completed", "reviewedBy": reviewer, "reviewedAtUtc": now, "reviewOutcome": outcome,
+                  "reviewNotes": notes, "reviewChannel": channel}
+        if outcome == "approved":
+            # The analyst confirmed the extracted lines, so release the downstream CSV the pipeline held back.
+            # (handled_manually means the lines were wrong: a CSV of them would be too.)
+            review.update(self._release_csv(processing_id, run_id, entity))
+        # Merge only the review fields, If-Match on the row's etag, so a reprocess or a second reviewer
+        # writing at the same moment is rejected instead of silently overwritten.
+        conditions = {}
+        etag = (getattr(entity, "metadata", None) or {}).get("etag")
+        if etag:
+            conditions = {"etag": etag, "match_condition": MatchConditions.IfNotModified}
+        try:
+            self._table.update_entity({"PartitionKey": processing_id, "RowKey": run_id, **review}, mode=UpdateMode.MERGE, **conditions)
+        except ResourceModifiedError as exc:
+            raise ReviewConflict("The run changed while the review was being recorded; reload it and try again.") from exc
+
+        events = self.get_events(processing_id, run_id)
+        seq = max((int(e.get("seq") or 0) for e in events), default=0) + 1
+        details = {"reviewer": reviewer, "outcome": outcome, "notes": notes, "channel": channel,
+                   "csvBlobUri": review.get("csvBlobUri")}
+        try:
+            self._events.upsert_entity({
+                "PartitionKey": processing_id,
+                "RowKey": f"{run_id}_{seq:04d}",
+                "runId": run_id,
+                "seq": seq,
+                "event": "review_completed",
+                "eventTimeUtc": now,
+                "previousState": "ReviewRequired",
+                "newState": "ReviewRequired",
+                "stage": "ManualReview",
+                "detailsJson": json.dumps(details, sort_keys=True)[:30000],
+            })
+        except Exception:  # the run row is the record; the timeline entry is best-effort
+            logger.warning("review event write failed processingId=%s runId=%s", processing_id, run_id)
+        return {"processingId": processing_id, "runId": run_id, **review}
+
+    def _release_csv(self, processing_id: str, run_id: str, entity) -> dict:
+        """Write the run's downstream CSV from its final result; ReviewConflict if the lines can't make one."""
+        final = self._read_json(entity.get("finalResultBlobUri")) or {}
+        if final.get("runId") not in (None, run_id):
+            raise ReviewConflict("The run's final result belongs to another run; reload it and try again.")
+        try:
+            data = payment_csv(final.get("paymentLines") or [])
+        except ValueError as exc:
+            raise ReviewConflict(f"{exc} It can't be approved; use handled_manually or rejected.") from exc
+        name = csv_file_name(final.get("remittanceMetadata") or {})
+        from azure.storage.blob import ContentSettings
+
+        self._blob.get_blob_client("results", f"{processing_id}/{run_id}/{name}").upload_blob(
+            data, overwrite=True, content_settings=ContentSettings(content_type="text/csv; charset=utf-8"))
+        return {"csvBlobUri": f"results/{processing_id}/{run_id}/{name}", "csvFileName": name}
 
     def replay_dead_letters(self, max_messages: int = 50) -> int:
         if self._bus is None:

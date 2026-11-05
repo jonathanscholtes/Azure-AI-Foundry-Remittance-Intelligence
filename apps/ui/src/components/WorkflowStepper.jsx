@@ -7,7 +7,7 @@ import {
   Warning24Filled,
   SubtractCircle24Regular,
 } from "@fluentui/react-icons";
-import { PIPELINE_STEPS, duration, isTerminal, resolutionSkipText, stepIndexForState } from "../format.js";
+import { PIPELINE_STEPS, duration, resolutionSkipText, stepIndexForState, terminalStatus } from "../format.js";
 
 const useStyles = makeStyles({
   root: { display: "flex", alignItems: "flex-start", gap: "4px", padding: "8px 0" },
@@ -114,7 +114,7 @@ export default function WorkflowStepper({ run, events, compact = false, hidePend
   const styles = useStyles();
   const status = run?.status;
   const state = run?.currentState || status || "Queued";
-  const terminal = isTerminal(status) ? status : null;
+  const terminal = terminalStatus(run);
   const activeIndex = run ? Math.max(0, stepIndexForState(state)) : -1;
   const reachedAssurance = (events || []).some((e) => e.newState === "AssuranceReview") || state === "AssuranceReview";
   const durations = stepDurations(events);

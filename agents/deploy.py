@@ -5,12 +5,17 @@ Each agent is a module declaring NAME / INSTRUCTIONS / tool flags, and this scri
 version with ``agents.create_version`` and prunes old versions. The Function references agents by
 NAME (latest version), so no agent ids need to be injected after a redeploy.
 
+The ACH Review Expert (Copilot) binds the review MCP server that API Management exposes. Its URL and
+subscription key come from the Foundry connection ``--review-mcp-connection-name`` (created by
+scripts/Deploy-Apim.ps1); until that connection exists the agent is skipped with a warning.
+
 Usage:
     python agents/deploy.py \\
         --project-endpoint <FOUNDRY_PROJECT_ENDPOINT> \\
         --model-deployment cu-gpt-55 \\
         [--search-connection-name ach-policy-search] \\
-        [--index-name ach-policy]
+        [--index-name ach-policy] \\
+        [--review-mcp-connection-name ach-review-mcp]
 """
 
 import argparse
@@ -29,6 +34,7 @@ from azure.ai.projects.models import (
     AzureAISearchQueryType,
     AzureAISearchToolResource,
     FunctionTool,
+    MCPTool,
     PromptAgentDefinition,
     PromptAgentDefinitionText,
     Reasoning,
@@ -36,7 +42,7 @@ from azure.ai.projects.models import (
 )
 from azure.identity import DefaultAzureCredential
 
-from agents import assurance_agent, extraction_agent, resolution_agent
+from agents import assurance_agent, extraction_agent, resolution_agent, review_agent
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -44,19 +50,43 @@ logger = logging.getLogger(__name__)
 # In pipeline order. Each module declares NAME (the Foundry agent name the Function references),
 # DISPLAY_NAME / PIPELINE_STEP / DESCRIPTION (shown in Foundry so operators can place the agent in
 # the process), INSTRUCTIONS, USES_SEARCH, and optionally OUTPUT_SCHEMA, REASONING_EFFORT, TOOLS
-# (function tools the Function executes) and MODEL ("reasoning" -> the GPT-5.6 Terra deployment).
-AGENT_MODULES = [extraction_agent, resolution_agent, assurance_agent]
+# (function tools the Function executes), MODEL ("reasoning" -> the GPT-5.6 Terra deployment) and
+# USES_MCP / MCP_SERVER_LABEL / ALLOWED_TOOLS / REQUIRE_APPROVAL (the APIM review MCP server).
+AGENT_MODULES = [extraction_agent, resolution_agent, assurance_agent, review_agent]
 KEEP_VERSIONS = 3
 
 
 class AgentDeployer:
     def __init__(self, project_endpoint: str, model_deployment: str, search_connection_name: str, index_name: str,
-                 reasoning_deployment: Optional[str] = None):
+                 reasoning_deployment: Optional[str] = None, review_mcp_connection_name: str = "ach-review-mcp"):
         self.model_deployment = model_deployment
         self.reasoning_deployment = reasoning_deployment or model_deployment
         self.search_connection_name = search_connection_name
         self.index_name = index_name
+        self.review_mcp_connection_name = review_mcp_connection_name
         self.project_client = AIProjectClient(endpoint=project_endpoint, credential=DefaultAzureCredential())
+
+    def _mcp_connection(self):
+        """The review MCP server's Foundry connection (target = APIM MCP URL, key = APIM subscription key)."""
+        try:
+            connection = self.project_client.connections.get(self.review_mcp_connection_name)
+        except Exception:
+            return None
+        if not connection.target:
+            return None
+        logger.info("Review MCP server: %s (connection %s)", connection.target, connection.name)
+        return connection
+
+    def _mcp_tools(self, module, connection) -> list:
+        return [
+            MCPTool(
+                server_label=module.MCP_SERVER_LABEL,
+                server_url=connection.target,
+                project_connection_id=connection.id,
+                allowed_tools=list(module.ALLOWED_TOOLS),
+                require_approval=getattr(module, "REQUIRE_APPROVAL", "never"),
+            )
+        ]
 
     def _search_connection_id(self) -> Optional[str]:
         try:
@@ -106,9 +136,16 @@ class AgentDeployer:
 
     def deploy(self) -> dict:
         connection_id = self._search_connection_id()
+        mcp_connection = self._mcp_connection()
         results = {}
         for module in AGENT_MODULES:
+            if getattr(module, "USES_MCP", False) and mcp_connection is None:
+                logger.warning("Skipped  %-24s - Foundry connection '%s' not found; run scripts/Deploy-Apim.ps1 and the "
+                               "APIM MCP export (docs/review-agent.md), then redeploy the agents.",
+                               module.NAME, self.review_mcp_connection_name)
+                continue
             tools = self._search_tools(connection_id) if getattr(module, "USES_SEARCH", False) else []
+            tools += self._mcp_tools(module, mcp_connection) if getattr(module, "USES_MCP", False) else []
             tools += [
                 FunctionTool(name=t["name"], description=t["description"], parameters=t["parameters"], strict=True)
                 for t in getattr(module, "TOOLS", [])
@@ -152,9 +189,11 @@ def main() -> None:
     parser.add_argument("--reasoning-deployment", default=None, help="deployment for MODEL='reasoning' agents (GPT-5.6 Terra)")
     parser.add_argument("--search-connection-name", default="ach-policy-search")
     parser.add_argument("--index-name", default="ach-policy")
+    parser.add_argument("--review-mcp-connection-name", default="ach-review-mcp",
+                        help="Foundry connection to the APIM review MCP server (ACH Review Expert)")
     args = parser.parse_args()
     ids = AgentDeployer(args.project_endpoint, args.model_deployment, args.search_connection_name, args.index_name,
-                        args.reasoning_deployment).deploy()
+                        args.reasoning_deployment, args.review_mcp_connection_name).deploy()
     print(json.dumps(ids, indent=2))
 
 

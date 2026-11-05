@@ -30,8 +30,7 @@ import {
   isTerminal,
   money,
   number,
-  statusAppearance,
-  statusLabel,
+  runBadge,
   warningLabel,
 } from "../format.js";
 
@@ -173,8 +172,8 @@ export default function AuditPage({ title = "Processing runs", description, defa
                   <TableCell className={styles.nowrap}>{money(r.paymentTotal, r.currency || "USD")}</TableCell>
                   <TableCell className={styles.nowrap}>{money(r.calculatedPaymentTotal, r.currency || "USD")}</TableCell>
                   <TableCell className={styles.nowrap}>
-                    <Badge appearance="filled" color={isTerminal(r.status) ? statusAppearance(r.status) : "brand"}>
-                      {statusLabel(isTerminal(r.status) ? r.status : r.currentState || r.status)}
+                    <Badge appearance="filled" color={runBadge(r).color}>
+                      {runBadge(r).label}
                     </Badge>
                   </TableCell>
                   <TableCell className={styles.reasonCell}>

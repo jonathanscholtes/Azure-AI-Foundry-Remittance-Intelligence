@@ -16,14 +16,11 @@ import {
   Link,
 } from "@fluentui/react-components";
 import { ArrowDownload16Regular, ChevronRight16Regular, Eye16Regular, DocumentBulletList24Regular } from "@fluentui/react-icons";
-import { dateTime, money, number, statusAppearance, statusLabel, isTerminal } from "../../format.js";
+import { dateTime, money, number, runBadge } from "../../format.js";
 import { api } from "../../api.js";
 
 // Terminal runs show their outcome; in-flight runs show the live pipeline state.
-function statusMeta(run) {
-  if (isTerminal(run.status)) return { label: statusLabel(run.status), color: statusAppearance(run.status) };
-  return { label: statusLabel(run.currentState || run.status), color: "brand" };
-}
+const statusMeta = runBadge;
 
 const useStyles = makeStyles({
   card: { padding: "10px 12px", overflowX: "auto" },

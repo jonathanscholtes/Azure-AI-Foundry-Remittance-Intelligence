@@ -12,7 +12,10 @@ from app.transforms import (
     entity_to_summary,
     event_entity_to_event,
     latest_per_processing,
+    page_text,
     pipeline_snapshot,
+    review_case,
+    review_state,
     to_float,
 )
 
@@ -121,6 +124,34 @@ class TransformTests(unittest.TestCase):
         event = event_entity_to_event({"seq": 3, "newState": "Extracted", "detailsJson": '{"durationMs": 1200}'})
         self.assertEqual(event["details"]["durationMs"], 1200)
         self.assertEqual(event["newState"], "Extracted")
+
+    def test_review_state(self):
+        self.assertEqual(review_state({"status": "ReviewRequired"}), "open")
+        self.assertEqual(review_state({"status": "ReviewRequired", "reviewStatus": "Completed"}), "completed")
+        self.assertIsNone(review_state({"status": "Completed"}))
+
+    def test_review_case_lists_body_and_documents_and_compacts_assurance(self):
+        case = review_case({
+            "processingId": "REM-0123456789ABCDEF0123", "status": "ReviewRequired", "warnings": ["total_mismatch"],
+            "message": {"subject": "Remittance", "hasBody": True},
+            "candidateResults": [{"candidateId": "message-body"}, {"candidateId": "doc-001", "name": "advice.pdf", "lineCount": 2}],
+            "paymentLines": [{"proInvoiceNumber": "1234567", "amountPaid": 10.0, "source": {"grounded": True}}],
+            "assurance": {"decision": "dispute_short_pay", "findings": [
+                {"issueId": "i1", "decision": "dispute_short_pay", "lines": [{"pro": "x"}], "citations": [{"policyId": "P-1", "title": "Short pays", "excerpt": "..."}]}]},
+        })
+        self.assertEqual(case["reviewState"], "open")
+        self.assertEqual([s["sourceId"] for s in case["sources"]], ["message-body", "doc-001"])
+        self.assertEqual(case["paymentLines"][0]["proInvoiceNumber"], "1234567")
+        self.assertNotIn("source", case["paymentLines"][0])
+        self.assertEqual(case["assurance"]["findings"][0]["citations"], [{"policyId": "P-1", "title": "Short pays"}])
+        self.assertNotIn("lines", case["assurance"]["findings"][0])
+        self.assertIsNone(case["resolution"])
+
+    def test_page_text_pages_by_offset(self):
+        text = "x" * 9000
+        first = page_text("doc-001", text, 0)
+        self.assertEqual((len(first["text"]), first["nextOffset"]), (8000, 8000))
+        self.assertIsNone(page_text("doc-001", text, first["nextOffset"])["nextOffset"])
 
 
 if __name__ == "__main__":

@@ -14,9 +14,10 @@ param(
     [bool]$SkipTests = $true,
 
     # Phases to skip, e.g. -Skip infra,contentunderstanding,dataseed,agents to redeploy just the code.
-    # Order of phases: infra -> contentunderstanding -> dataseed -> agents -> function -> apps.
+    # Order of phases: infra -> contentunderstanding -> dataseed -> agents -> function -> apps -> apim.
+    # apim (dedicated APIM + MCP connection for the ACH Review Expert) runs only with -Private -PrivateUi.
     [Parameter(Mandatory = $false)]
-    [ValidateSet('infra', 'contentunderstanding', 'dataseed', 'agents', 'function', 'apps')]
+    [ValidateSet('infra', 'contentunderstanding', 'dataseed', 'agents', 'function', 'apps', 'apim')]
     [string[]]$Skip = @(),
 
     # App Service plan SKU for the Function. B1 is fine for single uploads; use S1/P1v3 for load tests.
@@ -207,6 +208,17 @@ if ($Skip -notcontains 'apps') {
     Invoke-OptionalPhaseScript -Label "Applications and UI" -ScriptPath (Resolve-RepoPath "scripts/Deploy-Applications.ps1") -ScriptArgs $common
 }
 
+# APIM: the solution's dedicated, VNet-injected API Management with the ACH Review API + the Foundry MCP connection.
+# Private deployments only: APIM reaches the UI over the Container Apps private endpoint.
+$runApim = ($Skip -notcontains 'apim') -and $Private -and $PrivateUi
+if (($Skip -notcontains 'apim') -and -not $runApim) {
+    Write-Host "[deploy] Skipping API Management (ACH Review Expert): it needs -Private -PrivateUi." -ForegroundColor DarkGray
+}
+if ($runApim) {
+    $apimArgs = $common + @{ LandingZoneTag = $LandingZoneTag }
+    Invoke-OptionalPhaseScript -Label "API Management (ACH Review API)" -ScriptPath (Resolve-RepoPath "scripts/Deploy-Apim.ps1") -ScriptArgs $apimArgs
+}
+
 # ---------------------------------------------------------------------------
 # Deployment summary — resolve service endpoints from the infra outputs + apps.
 # ---------------------------------------------------------------------------
@@ -231,6 +243,7 @@ Show-Phase "Policy corpus seeded (AI Search)"   ($Skip -notcontains 'dataseed')
 Show-Phase "Foundry agents deployed"            ($Skip -notcontains 'agents')
 Show-Phase "Function App published"             ($Skip -notcontains 'function')
 Show-Phase "Applications & UI deployed"         ($Skip -notcontains 'apps')
+Show-Phase "ACH Review API on APIM"             $runApim
 
 $out = $null
 try { $out = Get-InfraOutputs -ResourceGroup $ResourceGroup } catch { }

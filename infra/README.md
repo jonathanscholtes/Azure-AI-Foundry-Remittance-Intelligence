@@ -19,6 +19,8 @@ The Foundry endpoint, Service Bus (Standard has no private endpoints) and AI Sea
 
 The Container Apps environment is VNet-integrated (outbound to private storage) and keeps public ingress for the `ui` app unless `-PrivateUi` is set (below); the `api` app uses internal ingress. Function publishing in private mode needs line-of-sight to the blob private endpoint (VPN).
 
+With `-Private -PrivateUi` (opt out with `-Skip apim`), the `apim` phase adds a dedicated API Management instance (Developer tier) for the ACH Review Expert. It is injected in external mode into its own non-delegated `/27` subnet, `snet-apim-<project>-<environment>-<token>`, which has an NSG with APIM's required rules and is never chosen as the private-endpoint subnet. APIM's gateway is public, with only the subscription-keyed ACH Review API on it. Its backend calls reach the UI's `/api` proxy over the Container Apps private endpoint. See [docs/review-agent.md](../docs/review-agent.md).
+
 ### Private UI (VNet / VPN only)
 
 `./deploy.ps1 ... -Private -PrivateUi` makes the UI reachable only from the landing-zone VNet, e.g.

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { makeStyles } from "@fluentui/react-components";
 import { api } from "../api.js";
-import { isTerminal } from "../format.js";
+import { isOpenReview, isTerminal } from "../format.js";
 import { usePolling } from "../usePolling.js";
 import UploadCard from "../components/dashboard/UploadCard.jsx";
 import UploadGuidelines from "../components/dashboard/UploadGuidelines.jsx";
@@ -41,11 +41,11 @@ const useStyles = makeStyles({
 
 // Derive the dashboard KPI summary from the ledger list.
 function summarize(items) {
-  const isException = (r) => r.requiresReview || r.status === "ReviewRequired" || r.status === "Failed";
+  const isException = (r) => isOpenReview(r) || r.status === "Failed";
   return {
     count: items.length,
     completed: items.filter((r) => r.status === "Completed").length,
-    reviewRequired: items.filter((r) => r.requiresReview || r.status === "ReviewRequired").length,
+    reviewRequired: items.filter(isOpenReview).length,
     failed: items.filter((r) => r.status === "Failed").length,
     exceptions: items.filter(isException),
   };

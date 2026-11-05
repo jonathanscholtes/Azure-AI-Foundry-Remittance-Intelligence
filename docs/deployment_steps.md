@@ -115,16 +115,17 @@ How the settings are applied:
 ./deploy.ps1 -Subscription <subscription-id> -Location westus3 -Environment dev
 ```
 
-Resources are created in the resource group `rg-ach-remit-<environment>`. The script runs six phases:
+Resources are created in the resource group `rg-ach-remit-<environment>`. The script runs six phases, plus a seventh on private deployments:
 
 | Phase | `-Skip` name | Script | What it does |
 |---|---|---|---|
 | 1 | `infra` | `scripts/Deploy-Infrastructure.ps1` | Deploys `infra/main.bicep`: Foundry account and project, model deployments, AI Search, Storage, Service Bus, Function app, Container Registry, Container Apps environment, Log Analytics, Application Insights and the dashboard |
 | 2 | `contentunderstanding` | `scripts/Deploy-ContentUnderstanding.ps1` | Sets the Content Understanding model defaults and creates the `ach.remittance.v1` analyzer |
 | 3 | `dataseed` | `scripts/Deploy-DataSeed.ps1` | Creates the `ach-policy` index and loads the deduction-policy corpus |
-| 4 | `agents` | `scripts/Deploy-FoundryAgents.ps1` | Creates new versions of the Foundry agents (Extraction, Resolution and Assurance experts) |
+| 4 | `agents` | `scripts/Deploy-FoundryAgents.ps1` | Creates new versions of the Foundry agents (Extraction, Resolution and Assurance experts, and the ACH Review Expert once its MCP connection exists) |
 | 5 | `function` | `scripts/Deploy-FunctionApp.ps1` | Publishes the Functions app (remote build) |
 | 6 | `apps` | `scripts/Deploy-Applications.ps1` | Builds the API and UI images and deploys the container apps |
+| 7 | `apim` | `scripts/Deploy-Apim.ps1` | `-Private -PrivateUi` only: deploys the dedicated API Management instance in the landing-zone VNet, with the ACH Review API and the Foundry MCP connection, for the [ACH Review Expert](review-agent.md) (first deployment ~30–45 minutes) |
 
 The script ends with a phase checklist and the service endpoints, including the **UI URL**.
 
