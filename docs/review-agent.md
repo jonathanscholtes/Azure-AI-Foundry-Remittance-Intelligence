@@ -89,10 +89,12 @@ not authenticated.
 
 ### Security
 
-- **APIM's gateway is the only public entry point.** It exposes only the five review operations,
-  each requiring a subscription key on the `ACH Review` product. The only key is held by the Foundry
-  connection `ach-review-mcp`, and that subscription is scoped to the product. The product requires
-  approval, so developer-portal users can't issue themselves a key.
+- **APIM's gateway is the only public entry point.** It exposes the five review operations, each
+  requiring a subscription key on the `ACH Review` product. The only key for them is held by the
+  Foundry connection `ach-review-mcp`, and that subscription is scoped to the product. The product
+  requires approval, so developer-portal users can't issue themselves a key. The gateway also carries
+  the ACH Intake API for [mailbox intake](mailbox-intake.md). It's behind its own product and key, and
+  neither key can call the other API.
 - **The MCP export must not open its own path.** Create the MCP server with the `ACH Review` product and
   a subscription required. A keyless MCP server would make `completeReview` callable by anyone.
 - **The UI and API stay private.** The Container Apps environment has public network access disabled,
@@ -200,6 +202,15 @@ A review endpoint is declared in three places, which must stay in step: the rout
 the tool names APIM exports: the operation name in camelCase (`list_runs` becomes `listRuns`). After a
 change, rerun the `apim` phase and update the MCP server's operations in the portal.
 `apps/api/tests/test_review_api.py` fails if the three names drift apart.
+
+## Known limitations
+
+- **Old open reviews drop out of the lists.** Run lists only include runs updated in the last 14
+  days (the API's `DEFAULT_WINDOW_DAYS`). An open review older than that no longer appears on the
+  portal's Needs Review page or in the agent's `listRuns`. The run itself is unaffected: open it by its
+  processing id in the portal, or ask the agent about it by id. To widen the window, set the
+  `DEFAULT_WINDOW_DAYS` environment variable on the API container app. It isn't part of
+  `infra/apps.bicep`, so add it there too, or the next apps deployment removes it.
 
 ## Troubleshooting
 

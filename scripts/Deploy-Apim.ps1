@@ -92,6 +92,7 @@ if ($LASTEXITCODE -ne 0) { throw "Foundry connection deployment failed (az exit 
 
 Write-Host ""
 Write-Host "[apim] $apimName - ACH Review API: $gatewayUrl/$($apim.apiPath.value)  (product 'ACH Review', subscription key required)" -ForegroundColor Green
+Write-Host "[apim] ACH Intake API (mailbox flow): POST $($apim.intakeUrl.value)  (product 'ACH Intake'; key: APIM -> Subscriptions -> '$($apim.intakeSubscriptionName.value)')" -ForegroundColor Green
 Write-Host ""
 Write-Host "=== MANUAL STEP: export the ACH Review API as an MCP server ===" -ForegroundColor Cyan
 Write-Host "  1. Azure portal -> API Management '$apimName' -> APIs -> MCP servers -> + Create -> Expose an API as an MCP server."

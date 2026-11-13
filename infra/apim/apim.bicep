@@ -134,7 +134,17 @@ module reviewApi 'review-mcp.bicep' = {
   }
 }
 
+module intakeApi 'intake-api.bicep' = {
+  name: 'ach-intake-api'
+  params: {
+    apimName: apim.name
+    uiFqdn: uiFqdn
+  }
+}
+
 output apimName string = apim.name
 output gatewayUrl string = apim.properties.gatewayUrl
 output subscriptionName string = reviewApi.outputs.subscriptionName
 output apiPath string = reviewApi.outputs.apiPath
+output intakeUrl string = intakeApi.outputs.submitUrl
+output intakeSubscriptionName string = intakeApi.outputs.subscriptionName

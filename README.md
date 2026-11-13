@@ -75,9 +75,19 @@ Each run records the Content Understanding pages and tokens, the tokens for ever
 
 ## Architecture
 
+![End-to-End Solution](media/design.png)
+
 ```mermaid
 flowchart LR
     analyst(["Payment processing analyst"])
+    mailbox(["Remittance mailbox"])
+
+    subgraph m365["Microsoft 365"]
+        copilot["Microsoft 365 Copilot / Teams<br/>ACH Review Copilot"]
+    end
+    bot["Azure Bot Service<br/>created by Foundry publishing"]
+    flow["Power Automate / Logic App<br/>exports each email as .eml"]
+    apim["Azure API Management<br/>VNet-injected, subscription keys<br/>ACH Review API (MCP server)<br/>ACH Intake API"]
 
     subgraph aca["Azure Container Apps"]
         ui["UI<br/>React + Fluent UI"]
@@ -100,6 +110,7 @@ flowchart LR
         decision["Microsoft-Decision-1<br/>source and thread classification"]
         resolver["ACH Resolution Expert<br/>GPT-5.6 Terra - failing runs only"]
         agent["ACH Assurance Expert<br/>policy findings per issue"]
+        reviewer["ACH Review Expert<br/>runs, evidence, review sign-off"]
     end
 
     search[("Azure AI Search<br/>ach-policy index")]
@@ -132,20 +143,41 @@ flowchart LR
     api -- "status, timeline" --> tables
     api -- "artifacts, CSV" --> results
     results -.-> downstream
+
+    analyst -. "chat" .-> copilot
+    copilot -.-> bot -.-> reviewer
+    reviewer -. "MCP tool calls" .-> apim
+    reviewer -. "policy retrieval" .-> search
+    mailbox -.-> flow -. "submit email" .-> apim
+    apim -. "private endpoint<br/>via the UI's /api proxy" .-> ui
 ```
 
 For a step-by-step walk through one remittance, from upload to CSV or review, see [How It Works](docs/how-it-works.md).
+
+The dotted paths are optional and run on private deployments (`-Private -PrivateUi`). The solution's
+dedicated API Management instance is the only public entry point. Each API on it has its own product
+and subscription key, and its calls reach the private Container Apps environment through the UI's
+`/api` proxy:
+- **Copilot:** analysts work exceptions in Microsoft 365 Copilot or Teams through the **ACH Review
+  Expert**. It's a Foundry agent published to Copilot; publishing creates the Azure Bot Service. The
+  agent calls the ACH Review API, which APIM exposes as an MCP server. See
+  [ACH Review Expert](docs/review-agent.md).
+- **Mailbox intake:** a Power Automate flow or Logic App submits each new remittance email to the ACH
+  Intake API. See [Mailbox intake](docs/mailbox-intake.md).
 
 ### Core Components
 
 | Component | Technology | Role |
 |---|---|---|
 | UI | React, Fluent UI, nginx on Azure Container Apps | Upload, live pipeline, run details (timeline, lines, findings, cost), summaries by payer |
-| API | FastAPI on Azure Container Apps | Intake, run status and artifacts; the UI's only backend |
+| API | FastAPI on Azure Container Apps | Intake, run status and artifacts, review sign-off; the UI's only backend |
+| API gateway (private deployments) | Azure API Management (Developer, VNet-injected) | The only public entry point: the ACH Review API (MCP server for the Copilot agent) and the ACH Intake API (mailbox flow), each behind its own subscription key |
+| Analyst Copilot (optional) | Foundry agent published to Microsoft 365 Copilot and Teams (Azure Bot Service) | The ACH Review Expert: answers questions about runs, reviews flagged runs against the source email and documents, records the review sign-off |
+| Mailbox intake (optional) | Power Automate or Logic Apps (Office 365 Outlook) | Submits each new remittance email to the ACH Intake API |
 | Intake queue | Azure Service Bus | Claim-check messages, dead-letter and replay |
 | Orchestration | Azure Durable Functions (Python) | One orchestration per message; parse, extract, validate, resolve, assure, publish |
 | Document extraction | Content Understanding in Microsoft Foundry (`ach.remittance.v1`, GPT-5.5) | Lines and metadata from PDFs, images and other documents |
-| Experts | Foundry agents and Microsoft-Decision-1 | Column mapping, classification, resolution, assurance |
+| Experts | Foundry agents and Microsoft-Decision-1 | Column mapping, classification, resolution, assurance, analyst review (Copilot) |
 | Policy retrieval | Azure AI Search (`ach-policy`, text-embedding-3-large) | The deduction and cash-application policy the Assurance Expert cites |
 | State and artifacts | Azure Storage (Blob, Table) | Originals, attachments, analysis, results, ledger, audit |
 | Observability | Application Insights, Log Analytics, Azure Monitor dashboards with Grafana | Traces, run events, the ACH Remittance Processing dashboard |
@@ -200,6 +232,7 @@ Add `-Private -PrivateUi` to deploy into an existing landing-zone VNet with a VP
 | [Developer Guide](docs/developer-guide.md) | For changing the code: tests, and running the Function app, API or UI against a deployed environment |
 | [Golden-Set Evaluation](docs/evaluation.md) | Measuring accuracy on real messages checked by a person |
 | [Load Testing](docs/load-testing.md) | Replaying messages from a folder at a chosen rate to measure throughput, throttling and queue behavior |
+| [Mailbox intake](docs/mailbox-intake.md) | Submitting remittance emails automatically from a mailbox (Power Automate or Logic Apps) through the ACH Intake API on API Management |
 | [ACH Review Expert](docs/review-agent.md) | The optional Microsoft 365 Copilot agent that answers questions about runs, reviews flagged runs against the original email and documents, and marks reviews completed (through an API Management MCP server) |
 
 > **Cost:** the models, Content Understanding, AI Search and the other services are billable. Each run records its own usage and estimated cost.
