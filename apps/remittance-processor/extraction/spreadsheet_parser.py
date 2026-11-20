@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -117,7 +118,9 @@ def _normalize_rows(
         # The ACH Extraction Expert maps any header wording (or no header); the row checks below still apply.
         if mapping["tableKind"] != "payment_detail" or invoice_column is None or amount_column is None:
             kind = "spreadsheet_no_paid_amounts" if mapping["tableKind"] == "statement_or_open_items" else "spreadsheet_not_payment_detail"
-            return {"paymentLines": [], "warnings": [kind], "columnMapping": mapping}
+            columns = (_amount_columns(rows, header_row, invoice_column, worksheet, filename, identifier_formats or {})
+                       if invoice_column is not None else [])
+            return {"paymentLines": [], "warnings": [kind], "columnMapping": mapping, "amountColumns": columns}
         if header_row is None:
             header_row = -1
         if mapping["rulesAgree"] is False:
@@ -143,6 +146,7 @@ def _normalize_rows(
 
     lines = []
     totals = []
+    total_rows: set[int] = set()
     cell_errors = cell_errors or set()
     identifier_formats = identifier_formats or {}
     for row_index, row in enumerate(rows):
@@ -160,14 +164,27 @@ def _normalize_rows(
         if _EXCLUDED_ROW.search(invoice_number):
             warnings.append(f"row_{row_index + 1}:total_or_subtotal_row_skipped")
             totals.append(_parse_decimal_text(amount_text))
+            total_rows.add(row_index)
             continue
+
+        paid_amount = _parse_decimal_text(amount_text)
+        if paid_amount is None and invoice_number and not re.search(r"\d", invoice_number):
+            continue  # a label row (a repeated header such as "Invoice Number", a section title): no identifier, no amount
+        if not invoice_number and paid_amount is not None and len(lines) >= 2:  # one line: can't tell a total from a line missing its PRO
+            # No identifier, and the amount is exactly the sum of the lines above: the table's total, labelled
+            # or not (a bare =SUM row). A repeat of it below (e.g. "Settled: =D30") is the same total.
+            running = sum((Decimal(line["amountPaid"]) for line in lines if line["amountPaid"] is not None), Decimal("0"))
+            if Decimal(paid_amount) == running:
+                warnings.append(f"row_{row_index + 1}:total_or_subtotal_row_skipped")
+                totals.append(paid_amount)
+                total_rows.add(row_index)
+                continue
 
         line_warnings = []
         if (row_index, invoice_column) in cell_errors or (row_index, amount_column) in cell_errors:
             line_warnings.append("spreadsheet_error_cell")
         if not invoice_number:
             line_warnings.append("missing_invoice_number")
-        paid_amount = _parse_decimal_text(amount_text)
         if paid_amount is None:
             line_warnings.append("missing_or_invalid_amount_paid")
 
@@ -188,6 +205,7 @@ def _normalize_rows(
     # One Total row in the paid column is the sheet's own proof of its amounts. With subtotals (several
     # total rows) the check is skipped rather than guessed; reconciliation to the stated total remains.
     verified = False
+    totals = list(dict.fromkeys(totals))  # the same total repeated is one total, not subtotals
     if len(totals) == 1 and totals[0] is not None and lines:
         line_sum = sum((Decimal(line["amountPaid"]) for line in lines if line["amountPaid"] is not None), Decimal("0"))
         verified = line_sum == Decimal(totals[0])
@@ -198,7 +216,63 @@ def _normalize_rows(
     if mapping.get("rulesAgree") is False and not verified:
         warnings.append("column_mapping_unverified")
 
-    return {"paymentLines": lines, "warnings": warnings, "columnMapping": mapping, "totalVerified": verified}
+    return {"paymentLines": lines, "warnings": warnings, "columnMapping": mapping, "totalVerified": verified,
+            "contextText": _context_text(rows, {line["source"]["row"] - 1 for line in lines}, header_row, total_rows)}
+
+
+def _amount_columns(rows, header_row, id_col, worksheet, filename, formats) -> list[dict]:
+    """Each fully numeric column of a table read as a statement, as candidate lines (identifier + that
+    column's amount). Nothing is decided here: validation uses one only if it adds up exactly to the
+    payment the email states (remittance_validator.validate_and_merge)."""
+    start = (header_row if header_row is not None else -1) + 1
+    data = []
+    for index in range(max(start, 0), len(rows)):
+        row = rows[index]
+        identifier = _format_excel_identifier(row[id_col], formats.get((index, id_col))) if id_col < len(row) else ""
+        if identifier and not _EXCLUDED_ROW.search(identifier):
+            data.append((index, row, identifier))
+    if len(data) < 2:
+        return []
+    header = rows[header_row] if header_row is not None and 0 <= header_row < len(rows) else []
+    columns = []
+    for column in range(max(len(row) for _, row, _ in data)):
+        if column == id_col:
+            continue
+        amounts = [_parse_decimal_text(row[column]) if column < len(row) and not isinstance(row[column], (date, datetime)) else None
+                   for _, row, _ in data]
+        if any(amount is None for amount in amounts):
+            continue
+        columns.append({
+            "column": column, "header": _text(header[column]) if column < len(header) else None, "worksheet": worksheet,
+            "lines": [{"proInvoiceNumber": identifier, "amountPaid": amount, "confidence": None,
+                       "source": {"row": index + 1, "worksheet": worksheet, "documentName": filename, "column": column}}
+                      for (index, _, identifier), amount in zip(data, amounts)],
+        })
+    return columns
+
+
+_CONTEXT_MAX_CHARS = 20000  # one Content Understanding call, never chunked
+
+
+def _context_cell(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, float):
+        return f"{value:.15g}"
+    return _text(value)
+
+
+def _context_text(rows: list[list[Any]], line_rows: set[int], header_row: int, total_rows: set[int]) -> str:
+    """The sheet without its payment lines - title block, payment details, header and total rows - for
+    Content Understanding to read the payer, date, total and reference. Empty when the sheet holds
+    nothing beyond the table itself (no call is worth making)."""
+    rendered = [(index, " | ".join(text for text in map(_context_cell, row) if text)) for index, row in enumerate(rows)
+                if index not in line_rows]
+    if not any(text for index, text in rendered if index != header_row and index not in total_rows):
+        return ""
+    return "\n".join(text for _, text in rendered if text)[:_CONTEXT_MAX_CHARS]
 
 
 def parse_csv(content: bytes, filename: str) -> dict:
@@ -219,10 +293,16 @@ def parse_xlsx(content: bytes, filename: str) -> dict:
     from openpyxl.cell.cell import TYPE_ERROR
 
     workbook = load_workbook(io.BytesIO(content), data_only=False, read_only=False)
+    # Excel saves each formula's last computed value; read it rather than the formula text. A formula is
+    # unresolved only when no value was saved (a file written by a tool that doesn't calculate).
+    cached = load_workbook(io.BytesIO(content), data_only=True, read_only=False)
     all_lines = []
     warnings = []
     mappings = []
+    contexts: list[tuple[str, str]] = []
+    amount_columns: list[dict] = []
     for worksheet in workbook.worksheets:
+        values_sheet = cached[worksheet.title]
         rows = []
         formats = {}
         errors = set()
@@ -231,8 +311,12 @@ def parse_xlsx(content: bytes, filename: str) -> dict:
             for column_index, cell in enumerate(row):
                 value = cell.value
                 if isinstance(value, str) and value.startswith("="):
-                    errors.add((row_index, column_index))
-                    warnings.append(f"{worksheet.title}!{cell.coordinate}:formula_unresolved")
+                    value = values_sheet[cell.coordinate].value
+                    if isinstance(value, float):
+                        value = float(f"{value:.15g}")  # Excel's 15-digit precision: =SUM's 0.30000000000000004 is 0.3
+                    if value is None:
+                        errors.add((row_index, column_index))
+                        warnings.append(f"{worksheet.title}!{cell.coordinate}:formula_unresolved")
                 if cell.data_type == TYPE_ERROR:
                     errors.add((row_index, column_index))
                     warnings.append(f"{worksheet.title}!{cell.coordinate}:spreadsheet_error")
@@ -250,17 +334,33 @@ def parse_xlsx(content: bytes, filename: str) -> dict:
         warnings.extend(parsed["warnings"])
         if parsed.get("columnMapping"):
             mappings.append({"worksheet": worksheet.title, **parsed["columnMapping"]})
+        contexts.append((worksheet.title, parsed.get("contextText") or ""))
+        amount_columns.extend(parsed.get("amountColumns") or [])
     workbook.close()
-    return {"paymentLines": all_lines, "warnings": warnings, "columnMappings": mappings}
+    cached.close()
+    return {"paymentLines": all_lines, "warnings": warnings, "columnMappings": mappings, "contextText": _join_contexts(contexts),
+            "amountColumns": amount_columns}
+
+
+def _join_contexts(contexts: list[tuple[str, str]]) -> str:
+    present = [(name, text) for name, text in contexts if text]
+    if len(present) == 1:
+        return present[0][1]
+    return "\n\n".join(f"[Worksheet: {name}]\n{text}" for name, text in present)[:_CONTEXT_MAX_CHARS]
 
 
 def parse_xls(content: bytes, filename: str) -> dict:
     import xlrd
 
-    workbook = xlrd.open_workbook(file_contents=content)
+    # formatting_info loads each cell's number format (e.g. "000000000"), so leading zeros survive.
+    # ignore_workbook_corruption: some reporting tools write a compound-file table xlrd's strict check
+    # rejects ("Workbook corruption: seen[2] == 4") although Excel opens the file fine.
+    workbook = xlrd.open_workbook(file_contents=content, formatting_info=True, ignore_workbook_corruption=True)
     all_lines = []
     warnings = []
     mappings = []
+    contexts: list[tuple[str, str]] = []
+    amount_columns: list[dict] = []
     for worksheet in workbook.sheets():
         rows = []
         formats = {}
@@ -273,11 +373,16 @@ def parse_xls(content: bytes, filename: str) -> dict:
                 if cell.ctype == xlrd.XL_CELL_ERROR:
                     errors.add((row_index, column_index))
                     warnings.append(f"{worksheet.name}!R{row_index + 1}C{column_index + 1}:spreadsheet_error")
-                elif cell.ctype == xlrd.XL_CELL_NUMBER and float(value).is_integer():
+                elif cell.ctype == xlrd.XL_CELL_NUMBER and float(value).is_integer() and cell.xf_index is not None:
                     xf = workbook.xf_list[cell.xf_index]
                     cell_format = workbook.format_map.get(xf.format_key)
                     if cell_format:
                         formats[(row_index, column_index)] = cell_format.format_str
+                elif cell.ctype == xlrd.XL_CELL_DATE:
+                    try:  # .xls stores dates as day serials
+                        value = xlrd.xldate_as_datetime(value, workbook.datemode)
+                    except (ValueError, OverflowError, xlrd.xldate.XLDateError):
+                        pass
                 values.append(value)
             rows.append(values)
         parsed = _normalize_rows(
@@ -291,13 +396,25 @@ def parse_xls(content: bytes, filename: str) -> dict:
         warnings.extend(parsed["warnings"])
         if parsed.get("columnMapping"):
             mappings.append({"worksheet": worksheet.name, **parsed["columnMapping"]})
-    return {"paymentLines": all_lines, "warnings": warnings, "columnMappings": mappings}
+        contexts.append((worksheet.name, parsed.get("contextText") or ""))
+        amount_columns.extend(parsed.get("amountColumns") or [])
+    return {"paymentLines": all_lines, "warnings": warnings, "columnMappings": mappings, "contextText": _join_contexts(contexts),
+            "amountColumns": amount_columns}
+
+
+_ZIP_SIGNATURE = b"PK\x03\x04"  # .xlsx (Office Open XML)
+_OLE_SIGNATURE = bytes.fromhex("d0cf11e0a1b11ae1")  # .xls (Excel 97-2003)
 
 
 def parse_spreadsheet(content: bytes, filename: str) -> dict:
     extension = Path(filename).suffix.lower()
     if extension == ".csv":
         return parse_csv(content, filename)
+    # The extension is the sender's label; the bytes decide (ERP exports often name a legacy .xls ".xlsx").
+    if extension in (".xlsx", ".xls") and content.startswith(_ZIP_SIGNATURE):
+        return parse_xlsx(content, filename)
+    if extension in (".xlsx", ".xls") and content.startswith(_OLE_SIGNATURE):
+        return parse_xls(content, filename)
     if extension == ".xlsx":
         return parse_xlsx(content, filename)
     if extension == ".xls":

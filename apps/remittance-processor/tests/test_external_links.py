@@ -28,6 +28,11 @@ class ExternalLinkHeuristicTests(unittest.TestCase):
         body = "Please view your payment remittance at https://pay.example.com/view to see line items."
         self.assertEqual(_external_link_count(_parsed(body)), 1)
 
+    def test_action_phrase_wrapped_onto_the_next_line_is_counted(self):
+        body = ("Please click the link below to access the\r\nFabrikam remittance for payment being released.\r\n"
+                "https://pay.example.com/r/AB12CD <https://pay.example.com/r/AB12CD>")
+        self.assertGreaterEqual(_external_link_count(_parsed(body)), 1)
+
     def test_body_without_links_is_zero(self):
         self.assertEqual(_external_link_count(_parsed("No links here - the full remittance is in the body.")), 0)
 

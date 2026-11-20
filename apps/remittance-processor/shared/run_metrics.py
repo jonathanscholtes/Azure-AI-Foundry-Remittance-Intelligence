@@ -23,7 +23,8 @@ RUN_EVENT_VERSION = "1.0"
 
 LARGE_LINES = 100   # D above this many lines from one CU source
 LARGE_PAGES = 5     # ... or this many pages analyzed for it
-_TABLE_STRATEGIES = ("html_table+content_understanding", "text_table+content_understanding")
+_TABLE_STRATEGIES = ("html_table+content_understanding", "text_table+content_understanding",
+                     "stacked_records+content_understanding")
 _CLASS_ORDER = {"none": 0, "A": 1, "B": 2, "C": 3, "D": 4}
 
 

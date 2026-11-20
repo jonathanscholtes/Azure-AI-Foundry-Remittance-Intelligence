@@ -16,6 +16,7 @@ class MessageClassTests(unittest.TestCase):
     def test_each_class_from_what_produced_the_lines(self):
         self.assertEqual(run_metrics.message_class([_source("html_table+content_understanding", 12)]), "A")
         self.assertEqual(run_metrics.message_class([_source("text_table+content_understanding", 3)]), "A")
+        self.assertEqual(run_metrics.message_class([_source("stacked_records+content_understanding", 4000)]), "A")
         self.assertEqual(run_metrics.message_class([_source("deterministic_parser", 400)]), "B")
         self.assertEqual(run_metrics.message_class([_source("content_understanding", 6, pages=1)]), "C")
         self.assertEqual(run_metrics.message_class([_source("content_understanding", 150, pages=2)]), "D")

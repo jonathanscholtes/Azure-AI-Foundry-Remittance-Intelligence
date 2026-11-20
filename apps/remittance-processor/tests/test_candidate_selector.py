@@ -85,6 +85,34 @@ class CandidateSelectorTests(unittest.TestCase):
 
         self.assertEqual(result["candidates"][0]["classification"], "remittance_candidate")
 
+    def test_image_below_the_analysis_minimum_is_not_sent_for_analysis(self):
+        # A 40 x 40 px signature icon: Content Understanding rejects it, and it cannot hold a remittance.
+        icon = {"candidateId": "doc-001", "name": "image001.png", "extension": ".png", "size": 4767, "isInline": False,
+                "imagePixels": [40, 40]}
+        page = {"candidateId": "doc-002", "name": "image002.png", "extension": ".png", "size": 60000, "isInline": False,
+                "imagePixels": [1275, 1650]}
+        unknown = {"candidateId": "doc-003", "name": "scan.tif", "extension": ".tif", "size": 60000, "isInline": False,
+                   "imagePixels": None}
+        result = {c["candidateId"]: c for c in select_candidates([icon, page, unknown], subject="ACH Payment")["candidates"]}
+        self.assertEqual(result["doc-001"]["classification"], "ignored_candidate")
+        self.assertIn("below the 50 px analysis minimum", " ".join(result["doc-001"]["selectionReasons"]))
+        self.assertEqual(result["doc-002"]["classification"], "remittance_candidate")
+        self.assertEqual(result["doc-003"]["classification"], "remittance_candidate")  # size unknown: unchanged
+
+    def test_image_size_is_read_from_the_header(self):
+        import struct
+
+        from msg_parser.image_size import image_size
+
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + struct.pack(">II", 40, 30) + b"\x08\x06\x00\x00\x00"
+        gif = b"GIF89a" + struct.pack("<HH", 120, 60)
+        jpeg = b"\xff\xd8" + b"\xff\xe0" + struct.pack(">H", 4) + b"JF" + b"\xff\xc0" + struct.pack(">HBHH", 11, 8, 480, 640) + b"\x03"
+        self.assertEqual(image_size(png), (40, 30))
+        self.assertEqual(image_size(gif), (120, 60))
+        self.assertEqual(image_size(jpeg), (640, 480))
+        self.assertIsNone(image_size(b"%PDF-1.7"))
+        self.assertIsNone(image_size(b"\x89PNG\r\n\x1a\n"))  # truncated
+
 
 if __name__ == "__main__":
     unittest.main()

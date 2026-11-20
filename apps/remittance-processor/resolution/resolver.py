@@ -48,6 +48,8 @@ DETAIL_TRIGGERS = {
 SECONDARY_TRIGGERS = {"missing_remittance_date": "remittanceDate"}
 # Runs where filling a single date makes no sense: each payment has its own, or there is no remittance.
 _NO_DATE_RESOLUTION = {"multiple_payments_in_email", "no_remittance_in_email"}
+# Thread kinds (Decision-1, confident) that stay with the analyst: the expert never resolves lines.
+_ANALYST_THREADS = {"remittance_inquiry_thread", "no_remittance_in_email"}
 TRIGGERS = LINE_TRIGGERS | {code for codes in DETAIL_TRIGGERS.values() for code in codes}
 # Applied automatically when grounded; a payer decides which customer account the cash goes to, so
 # it is only ever recommended (the analyst confirms).
@@ -69,6 +71,11 @@ def needs_resolution(warnings: list[str], *, requires_review: bool = False) -> l
 
     present = set(warnings or [])
     triggers = present & TRIGGERS
+    # A collections inquiry or an email with no remittance is the analyst's question, not an extraction
+    # gap: recovering lines cannot answer it, and an accepted line proposal is re-validated without the
+    # thread classification - so it could release the run. Only the details (payer, date) are asked.
+    if present & _ANALYST_THREADS:
+        triggers -= LINE_TRIGGERS
     # Several payments in one email explain the gap to the (single) stated total and the differing
     # dates / references; recovering lines cannot fix them, and choosing among payments is the analyst's.
     if "multiple_payments_in_email" in present:
@@ -93,6 +100,10 @@ def _detail_fields(triggers) -> set[str]:
 def skip_reason(warnings: list[str]) -> str | None:
     """Why the expert was not called although verification failed (audit only - pure)."""
     warnings = warnings or []
+    if "remittance_inquiry_thread" in warnings:
+        return "inquiry_thread_for_analyst"
+    if "no_remittance_in_email" in warnings:
+        return "no_remittance_for_analyst"
     if "payment_total_mismatch" in warnings and "multiple_payments_in_email" in warnings and not needs_resolution(warnings):
         return "explained_by_multiple_payments"
     return None
@@ -114,7 +125,8 @@ def apply_resolution(final_result: dict, resolved: dict) -> dict:
     """Fold the expert's result into the run (pure - shared by the orchestrator and the golden runner).
 
     Accepted: the re-validated result with the expert's lines (a note, not a review reason).
-    Confirmed: the lines stand; the thread kind it named (e.g. several payments) becomes the review reason."""
+    Confirmed: the lines stand; the thread kind it named (e.g. several payments) becomes the review reason.
+    No lines, with the reason named (detail behind a link, no remittance): that becomes the review reason."""
     def add(result, code, blocking):
         from validation.remittance_validator import split_warnings
 
@@ -131,7 +143,7 @@ def apply_resolution(final_result: dict, resolved: dict) -> dict:
     if resolved.get("status") == "accepted" and resolved.get("validated"):
         final_result = resolved["validated"]["finalResult"]
         add(final_result, "resolved_by_expert", blocking=False)
-    elif resolved.get("status") == "confirmed" and resolved.get("threadWarning"):
+    elif resolved.get("threadWarning"):  # confirmed lines, or no lines with the reason named
         add(final_result, resolved["threadWarning"], blocking=True)
     applied = ((resolved.get("details") or {}).get("applied")) or {}
     if applied:
@@ -237,6 +249,7 @@ def make_tools(texts: SourceTexts, stated_total) -> dict:
     """The expert's tools: plain functions over the run's own data (no side effects)."""
     from extraction.content_understanding import ground_lines
     from extraction.html_tables import extract_html_payment_tables
+    from extraction.stacked_records import extract_stacked_records
     from extraction.text_tables import extract_text_payment_tables
 
     def get_source_text(sourceId: str, offset: int = 0) -> dict:
@@ -249,6 +262,9 @@ def make_tools(texts: SourceTexts, stated_total) -> dict:
     def read_tables(sourceId: str) -> dict:
         text = texts.get(sourceId)
         result = extract_html_payment_tables(text) if "<table" in text.lower() else extract_text_payment_tables(text)
+        if not result.get("accepted") and "<table" not in text.lower():
+            stacked = extract_stacked_records(text)
+            result = stacked if stacked.get("accepted") else result
         lines = result.get("paymentLines") or []
         return {
             "sourceId": sourceId,
@@ -301,7 +317,7 @@ def _is_trusted(line: dict) -> bool:
     if "line_not_grounded" in (line.get("warnings") or []) or _amount(line.get("amountPaid")) is None:
         return False
     source = line.get("source") or {}
-    return source.get("grounded") is True or source.get("method") in ("html_table", "text_table") or "row" in source
+    return source.get("grounded") is True or source.get("method") in ("html_table", "text_table", "stacked_records") or "row" in source
 
 
 def gate(proposal: dict, extractions: list[dict], texts: SourceTexts, validate) -> dict:

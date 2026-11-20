@@ -18,6 +18,7 @@ from assurance.triage import triage
 REVIEW_REASONS = {
     "payment_total_mismatch": "Stated payment total does not reconcile to the sum of payment lines",
     "payment_total_not_provided": "No stated payment total to reconcile against",
+    "amounts_not_itemized": "One payment covers several PROs with no amount for each",
     "no_payment_lines_found": "No payment lines were extracted",
     "conflicting_payment_line": "The same PRO appears with different amounts",
     "negative_amount_paid": "A payment line has a negative amount (possible deduction or chargeback)",

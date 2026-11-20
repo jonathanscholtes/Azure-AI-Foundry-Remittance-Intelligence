@@ -90,7 +90,8 @@ OUTPUT_SCHEMA = {
                 },
             },
         },
-        "threadKind": {"type": "string", "enum": ["single_remittance", "multiple_payments", "dispute_or_inquiry", "no_remittance", "unclear"]},
+        "threadKind": {"type": "string", "enum": ["single_remittance", "multiple_payments", "dispute_or_inquiry", "no_remittance",
+                                                  "detail_behind_link", "unclear"]},
         "details": {
             "type": "array",
             "items": {
@@ -147,6 +148,9 @@ found in it, and its warnings.
    sources, same amounts) - that tells the analyst extraction is correct - and set threadKind to what
    the email is (multiple_payments when it covers several separate transfers or payments,
    dispute_or_inquiry for a collections or dispute thread).
+   When the payment lines are not in the email at all, answer "cannot_resolve" with lines: [] and
+   set threadKind: detail_behind_link when the email points to a link or portal holding the remittance
+   detail, or no_remittance when it carries no payment information.
 6. Never pick a subset of valid payment lines to match the total (e.g. one of three equal transfers
    because its date matches). Recovering lines that extraction got wrong or missed is your job;
    choosing between valid payments is the analyst's. If several valid payments are present, answer

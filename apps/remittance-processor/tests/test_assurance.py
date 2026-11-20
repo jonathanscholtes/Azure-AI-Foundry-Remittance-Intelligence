@@ -52,6 +52,23 @@ MISPAIRED = {
 
 
 class TriageTests(unittest.TestCase):
+    def test_one_payment_without_per_pro_amounts_is_one_payer_finding(self):
+        run = {
+            "processingId": "REM-N",
+            "remittanceMetadata": {"payerName": "Fabrikam", "paymentTotal": 300.0},
+            "paymentLines": [_line(pro, None, "missing_or_invalid_amount_paid") for pro in ("001234567", "001234568", "001234569")],
+            "quality": {"lineCount": 3, "totalDifference": 300.0,
+                        "warnings": ["amounts_not_itemized", "missing_or_invalid_amount_paid", "payment_total_mismatch"]},
+            "resolution": {"status": "rejected", "reason": "expert_could_not_resolve", "lineProblem": True,
+                           "explanation": "The three PROs appear only together in the description, with no split."},
+        }
+        issues = triage(run)
+        self.assertEqual([issue["code"] for issue in issues], ["amounts_not_itemized"])  # no extraction or data findings
+        self.assertEqual(issues[0]["kind"], "payer")
+        self.assertIn("One payment of $300.00 covers 3 PROs", issues[0]["title"])
+        self.assertIn("no split", issues[0]["title"])  # the expert's reasoning, folded in
+        self.assertEqual(fuse([], run)["headline"], "One payment, no amounts for 3 PROs")
+
     def test_splits_issues_by_owner_with_the_lines_involved(self):
         issues = {issue["id"]: issue for issue in triage(MIXED)}
         self.assertEqual(issues["data:invalid_pro_number"]["kind"], "data_quality")

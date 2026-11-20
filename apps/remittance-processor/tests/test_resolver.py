@@ -34,6 +34,18 @@ class ResolverTests(unittest.TestCase):
         self.assertIsNone(resolver.skip_reason(["payment_total_mismatch"]))  # the expert runs
         self.assertIsNone(resolver.skip_reason(["multiple_payments_in_email"]))  # nothing was off
 
+    def test_inquiry_and_no_remittance_threads_never_resolve_lines(self):
+        # An accepted line proposal is re-validated without the thread classification, so resolving lines
+        # on a collections thread could release it. The details (payer, date) are still worth asking.
+        warnings = ["remittance_inquiry_thread", "payment_total_mismatch", "conflicting_payerName", "missing_remittance_date"]
+        triggers = resolver.needs_resolution(warnings, requires_review=True)
+        self.assertEqual(triggers, ["conflicting_payerName", "missing_remittance_date"])
+        self.assertFalse(set(triggers) & resolver.LINE_TRIGGERS)
+        self.assertEqual(resolver.needs_resolution(["remittance_inquiry_thread", "payment_total_mismatch"]), [])
+        self.assertEqual(resolver.skip_reason(["remittance_inquiry_thread", "payment_total_mismatch"]), "inquiry_thread_for_analyst")
+        self.assertEqual(resolver.needs_resolution(["no_remittance_in_email", "no_payment_lines_found"], requires_review=True), [])
+        self.assertEqual(resolver.skip_reason(["no_remittance_in_email"]), "no_remittance_for_analyst")
+
     def test_detail_problems_call_the_expert_but_a_missing_date_alone_does_not(self):
         self.assertEqual(resolver.needs_resolution(["conflicting_payerName"]), ["conflicting_payerName"])
         self.assertEqual(resolver.needs_resolution(["missing_remittance_date"]), [])

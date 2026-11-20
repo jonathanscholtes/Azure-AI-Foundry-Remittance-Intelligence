@@ -21,9 +21,11 @@ from extraction.candidate_router import route_candidates
 from extraction.content_understanding import analyze_binary_candidate
 from classification import intake_decision
 from extraction.html_tables import extract_html_payment_tables
+from extraction.stacked_records import extract_stacked_records
 from extraction.text_tables import extract_text_payment_tables
 from msg_parser.candidate_selector import select_candidates
 from msg_parser.eml_parser import parse_message
+from msg_parser.image_size import image_size
 from msg_parser.manifest import create_source_manifest
 from msg_parser.text_normalizer import html_to_plain_text
 from shared import usage
@@ -49,7 +51,10 @@ THREAD_WARNINGS = {
     "multiple_payments": "multiple_payments_in_email",
     "dispute_or_inquiry": "remittance_inquiry_thread",
     "no_remittance": "no_remittance_in_email",
+    "detail_behind_link": "external_link_not_fetched",  # named by the ACH Resolution Expert
 }
+# What the ACH Resolution Expert can name when it finds no lines at all: the reason, not a failure.
+_EXPLAINS_NO_LINES = {"detail_behind_link", "no_remittance"}
 THROTTLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 
@@ -96,7 +101,8 @@ _URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _REMIT_LINK_RE = re.compile(
     r"(?:remittance|payment|invoice|statement)\s+detail"
     r"|\bportal\b"
-    r"|(?:view|download|access|retrieve|see|click)\b[^.\n]{0,40}?(?:remit|payment|invoice|statement|deduction)",
+    # The phrase may wrap onto the next line ("...to access the\r\nFabrikam remittance"); a sentence end stops it.
+    r"|(?:view|download|access|retrieve|see|click)\b[^.]{0,40}?(?:remit|payment|invoice|statement|deduction)",
     re.IGNORECASE,
 )
 
@@ -221,6 +227,7 @@ def intake_parse(payload: dict, *, blob_service, parse=parse_message) -> dict:
                 "size": len(attachment.content),
                 "sha256": sha256_hex(attachment.content),
                 "isInline": attachment.is_inline,
+                "imagePixels": image_size(attachment.content),
                 "blobUri": blob_uri,
                 "payloadBlobUri": blob_uri,
                 "payloadContentType": attachment.content_type,
@@ -395,18 +402,25 @@ def extract_candidate(payload: dict, *, blob_service, analyze=analyze_binary_can
             html_table = parsed_tables
             payloads[candidate_id] = (parsed_tables["condensedText"].encode("utf-8"), "text/plain")
     # MSG bodies usually carry no HTML (de-encapsulating the RTF body is too slow), but the plain-text
-    # body keeps the table as one cell per line - read it the same self-verifying way. Embedded
-    # (attached) email bodies are plain text too.
+    # body keeps the table as one cell per line - read it the same self-verifying way. A text report
+    # of stacked records (record line, adjustments, net line) is read likewise. Embedded (attached)
+    # email bodies are plain text too.
     text_body = candidate.get("sourceType") in ("message_body", "embedded_message_body")
     if html_table is None and text_body and candidate_id in payloads:
-        try:
-            parsed_tables = extract_text_payment_tables(payloads[candidate_id][0].decode("utf-8", errors="replace"))
-        except Exception as exc:
-            logger.warning("text table parse failed candidate=%s error=%s", candidate_id, type(exc).__name__)
-            parsed_tables = {"accepted": False}
-        if parsed_tables.get("accepted"):
-            html_table = {**parsed_tables, "strategy": "text_table+content_understanding"}
-            payloads[candidate_id] = (parsed_tables["condensedText"].encode("utf-8"), "text/plain")
+        text = payloads[candidate_id][0].decode("utf-8", errors="replace")
+        for reader, strategy in (
+            (extract_text_payment_tables, "text_table+content_understanding"),
+            (extract_stacked_records, "stacked_records+content_understanding"),
+        ):
+            try:
+                parsed_tables = reader(text)
+            except Exception as exc:
+                logger.warning("%s parse failed candidate=%s error=%s", strategy, candidate_id, type(exc).__name__)
+                parsed_tables = {"accepted": False}
+            if parsed_tables.get("accepted"):
+                html_table = {**parsed_tables, "strategy": strategy}
+                payloads[candidate_id] = (parsed_tables["condensedText"].encode("utf-8"), "text/plain")
+                break
     stats: dict = {}
     normalized, raw = route_candidates(
         [candidate],
@@ -684,6 +698,10 @@ def resolve_extraction(payload: dict, *, blob_service) -> dict:
     # Not resolved, but its lines are exactly the run's lines: extraction is right, and what it names
     # (several payments, a dispute...) is the business question - not an extraction failure.
     confirmed = line_problem and not decision["accepted"] and resolver.confirms_lines(proposal, final_result)
+    # No lines anywhere - in the run or the proposal - and the expert says why (behind a link, no
+    # remittance): that is the run's reason. A run with lines (e.g. PROs without amounts) never takes it.
+    explained = (line_problem and not decision["accepted"] and not proposal.get("lines")
+                 and not final_result.get("paymentLines") and proposal.get("threadKind") in _EXPLAINS_NO_LINES)
     if line_problem:
         status = "accepted" if decision["accepted"] else "confirmed" if confirmed else "rejected"
         reason = "lines_confirmed" if confirmed else decision["reason"]
@@ -696,7 +714,7 @@ def resolve_extraction(payload: dict, *, blob_service) -> dict:
         "reason": reason,
         "lineProblem": line_problem,
         "details": details,
-        "threadWarning": THREAD_WARNINGS.get(proposal.get("threadKind")) if confirmed else None,
+        "threadWarning": THREAD_WARNINGS.get(proposal.get("threadKind")) if confirmed or explained else None,
         "dropped": decision.get("dropped"),
         "outcome": proposal.get("outcome"),
         "threadKind": proposal.get("threadKind"),

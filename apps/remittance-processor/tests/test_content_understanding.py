@@ -308,6 +308,25 @@ class ChunkingTests(unittest.TestCase):
         self.assertTrue(merged["paymentLines"][0]["source"]["grounded"])
         self.assertEqual(merged["ungroundedLineCount"], 0)
 
+    def test_merge_drops_an_overlap_copy_paired_with_the_previous_rows_amount(self):
+        # The second chunk starts mid-record ("$88.00" closes the previous row), so its copy of PRO 8
+        # takes 88.00; grounding flags it and the grounded copy from the first chunk is the real row.
+        parts = [
+            {"remittanceMetadata": {}, "paymentLines": [{"proInvoiceNumber": "8", "amountPaid": 40.0, "source": {"grounded": True}}], "warnings": []},
+            {"remittanceMetadata": {}, "paymentLines": [{"proInvoiceNumber": "8", "amountPaid": 88.0, "source": {"grounded": False}}], "warnings": []},
+        ]
+        merged = merge_normalized_analyses(parts, candidate_id="c", source_type="message_body", overlaps=["", "$88.00\n8 $40.00\n"])
+        self.assertEqual([(l["proInvoiceNumber"], l["amountPaid"]) for l in merged["paymentLines"]], [("8", 40.0)])
+        self.assertEqual(merged["ungroundedLineCount"], 0)
+
+    def test_merge_keeps_two_grounded_overlap_rows_with_different_amounts(self):
+        parts = [
+            {"remittanceMetadata": {}, "paymentLines": [{"proInvoiceNumber": "9", "amountPaid": 10.0, "source": {"grounded": True}}], "warnings": []},
+            {"remittanceMetadata": {}, "paymentLines": [{"proInvoiceNumber": "9", "amountPaid": 15.0, "source": {"grounded": True}}], "warnings": []},
+        ]
+        merged = merge_normalized_analyses(parts, candidate_id="c", source_type="message_body", overlaps=["", "9 $10.00\n9 $15.00\n"])
+        self.assertEqual(len(merged["paymentLines"]), 2)
+
     def test_analyze_candidate_content_chunks_large_text_and_recovers_all_lines(self):
         calls = []
 

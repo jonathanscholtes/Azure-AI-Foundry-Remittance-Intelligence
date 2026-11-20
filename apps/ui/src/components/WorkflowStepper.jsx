@@ -40,7 +40,7 @@ function stepDetails(events) {
   if (Array.isArray(extracted) && extracted.length) {
     const method = (c) => {
       const strategy = c.strategy || "";
-      const table = strategy.startsWith("html_table") || strategy.startsWith("text_table") || strategy === "deterministic_parser";
+      const table = strategy.startsWith("html_table") || strategy.startsWith("text_table") || strategy.startsWith("stacked_records") || strategy === "deterministic_parser";
       if (table) return c.mappedBy === "agent" ? "Expert" : strategy === "deterministic_parser" ? "Sheet" : "Table";
       return strategy === "content_understanding" ? "CU" : strategy || "—";
     };

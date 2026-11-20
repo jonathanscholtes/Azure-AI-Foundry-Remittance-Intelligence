@@ -31,6 +31,7 @@ EXTRACTION_WARNINGS = {
     "content_understanding_not_configured": ("Extraction not configured", "Content Understanding is not configured"),
     "candidate_content_unavailable": ("Source content unavailable", "A source document could not be read"),
     "unsupported_content_type": ("Unsupported attachment", "An attachment type is not supported for extraction"),
+    "spreadsheet_parse_failed": ("Spreadsheet could not be read", "A spreadsheet attachment is corrupt, protected or not the format its name says"),
     "no_payment_lines_found": ("No payment lines extracted", "No payment lines were extracted from any source"),
     "attachment_parse_warning": ("Attachment not fully parsed", "An attachment could not be fully parsed"),
     "unclassified_attachment": ("Unclassified attachment", "An attachment could not be classified as remittance or not"),
@@ -135,6 +136,12 @@ def triage(final_result: dict) -> list[dict]:
     warnings = set(quality.get("warnings") or [])
     lines = final_result.get("paymentLines") or []
     issues: list[dict] = []
+    # One payment for several PROs with no amount for any: the missing amounts, the gap to the total and
+    # an expert that (rightly) found no split are one payer question, reported once.
+    unitemized = "amounts_not_itemized" in warnings
+    # No lines at all is expected when the detail sits behind a link or there is no remittance: that
+    # finding is the answer; "no lines" and the gap to the total are its symptoms.
+    no_lines_explained = not lines and bool(warnings & {"external_link_not_fetched", "no_remittance_in_email"})
 
     def with_warning(code, pool=lines):
         return [line for line in pool if code in (line.get("warnings") or [])]
@@ -149,7 +156,7 @@ def triage(final_result: dict) -> list[dict]:
             ungrounded, _sum_amounts(ungrounded),
         ))
     for code, (headline, title) in EXTRACTION_WARNINGS.items():
-        if code in warnings:
+        if code in warnings and not (no_lines_explained and code == "no_payment_lines_found"):
             issues.append(_issue(f"extraction:{code}", "extraction", code, headline, title))
     # Computed before the resolution finding: an unresolved attempt is not itself an extraction fault.
     extraction_suspect = any(issue["kind"] == "extraction" for issue in issues)
@@ -160,7 +167,11 @@ def triage(final_result: dict) -> list[dict]:
     # their data findings (with the expert's recommendation, below).
     triggers = resolution.get("triggers")
     line_problem = resolution.get("lineProblem", bool(set(triggers) & LINE_TRIGGERS) if triggers else True)
-    if resolution.get("status") in ("rejected", "failed") and line_problem:
+    expert_found_no_split = unitemized and resolution.get("reason") == "expert_could_not_resolve"
+    # The expert named why there are no lines (detail behind a link, no remittance): that payer finding
+    # below is the answer, not an extraction failure.
+    explained_by_expert = bool(resolution.get("threadWarning")) and resolution.get("threadWarning") in warnings
+    if resolution.get("status") in ("rejected", "failed") and line_problem and not expert_found_no_split and not explained_by_expert:
         # The ACH Resolution Expert tried; tell the analyst what it suggested and why it was not used.
         explanation = resolution.get("explanation") or ""
         reason = resolution.get("reason") or resolution.get("error") or resolution["status"]
@@ -181,6 +192,8 @@ def triage(final_result: dict) -> list[dict]:
 
     # --- data quality (correct from source) ---------------------------------------------------
     for code, (noun, title) in data_line_warnings().items():
+        if unitemized and code == "missing_or_invalid_amount_paid":
+            continue  # reported as the payer finding below
         flagged = with_warning(code, trusted)
         if flagged:
             issues.append(_issue(f"data:{code}", "data_quality", code, _count(len(flagged), *noun), _count(len(flagged), *title), flagged))
@@ -296,6 +309,17 @@ def triage(final_result: dict) -> list[dict]:
             "The thread discusses payments (e.g. an unapplied or already-paid amount, or where to apply money) rather than simply remitting one",
             lines,
         ))
+    if unitemized:
+        stated_total = _decimal((final_result.get("remittanceMetadata") or {}).get("paymentTotal"))
+        title = (f"One payment of {_money(stated_total) if stated_total is not None else 'the stated total'} covers "
+                 f"{len(lines)} PROs with no amount for each. Allocate it from the PROs' open balances, or ask the payer for the split")
+        if expert_found_no_split and resolution.get("explanation"):
+            title += f". ACH Resolution Expert: {resolution['explanation']}"
+        issues.append(_issue(
+            "payer:amounts_not_itemized", "payer", "amounts_not_itemized",
+            f"One payment, no amounts for {len(lines)} PROs", title, lines,
+            amount=stated_total,
+        ))
     if "no_remittance_in_email" in warnings:
         issues.append(_issue(
             "payer:no_remittance_in_email", "payer", "no_remittance_in_email",
@@ -308,7 +332,8 @@ def triage(final_result: dict) -> list[dict]:
         issues.append(_issue("payer:external_link_not_fetched", "payer", "external_link_not_fetched",
                              "Remittance detail behind a link", "Remittance detail is only available behind a link that was not fetched"))
     difference = _decimal(quality.get("totalDifference"))
-    if "payment_total_mismatch" in warnings and difference is not None and "payment_total_mismatch" not in folded:
+    if ("payment_total_mismatch" in warnings and difference is not None and "payment_total_mismatch" not in folded
+            and not unitemized and not no_lines_explained):
         if extraction_suspect:
             # Our extraction is incomplete, so the gap is not (yet) a payer question.
             issues[0]["title"] += f"; the stated total is off from the extracted lines by {_money(difference)} until extraction is resolved"
@@ -327,6 +352,7 @@ def triage(final_result: dict) -> list[dict]:
     # Any other blocking warning still gets an owner rather than being dropped.
     known = {issue["code"] for issue in issues} | set(EXTRACTION_WARNINGS) | set(METADATA_WARNINGS) | set(data_line_warnings()) | {
         "payment_total_mismatch", "payment_total_not_provided", "line_not_grounded", "conflicting_amount_for_pro",
+        "amounts_not_itemized", "payment_detail_proven_by_total",
         "amount_normalized_from_edi_addenda", "payment_total_derived_from_subtotals", "remittance_date_derived_from_schedule",
         "spreadsheet_no_paid_amounts", "spreadsheet_not_payment_detail", "column_mapping_differs_from_rules",
         "column_mapping_unverified", "resolved_by_expert", "pro_paid_across_payments",

@@ -88,6 +88,15 @@ def _matches_payee(value, payee_aliases) -> bool:
     return False
 
 
+def _is_contentless_attachment(candidate: dict) -> bool:
+    """An attachment that lists no payment lines and states no total - a logo, a signature banner. The
+    email text is never one: what it says about the payer is evidence."""
+    if _source_priority(candidate) == 0:
+        return False
+    total = (candidate.get("remittanceMetadata") or {}).get("paymentTotal")
+    return not candidate.get("paymentLines") and (total is None or str(total).strip() == "")
+
+
 def _merge_metadata(candidate_results: list[dict], payee_aliases: list[str] = ()) -> tuple[dict, list[str], list[dict]]:
     metadata = {field: None for field in _METADATA_FIELDS}
     warnings: list[str] = []
@@ -104,6 +113,12 @@ def _merge_metadata(candidate_results: list[dict], payee_aliases: list[str] = ()
             non_payee = [(candidate, value) for candidate, value in values if not _matches_payee(value, payee_aliases)]
             if non_payee:
                 values = non_payee
+        # A payer name read off an attachment with no payment content - no lines, no total: a logo or a
+        # signature banner - is used only when nothing else names the payer, and never contests it.
+        if field == "payerName":
+            substantive = [(candidate, value) for candidate, value in values if not _is_contentless_attachment(candidate)]
+            if substantive:
+                values = substantive
         if not values:
             continue
         if field == "remittanceDate":
@@ -118,6 +133,13 @@ def _merge_metadata(candidate_results: list[dict], payee_aliases: list[str] = ()
                 reverse=True,
             )
         metadata[field] = values[0][1]
+        # An advisory source (a spreadsheet's title block) is chosen like any other but never raises a
+        # conflict: "Fabrikam & Sons" on the sheet vs "FABRIKAM AND SONS" in the email is not a review case.
+        contested = [(candidate, value) for candidate, value in values
+                     if candidate.get("metadataRole") != "advisory"
+                     and not (field == "payerName" and _is_contentless_attachment(candidate))]
+        if len(contested) < len(values):
+            values = contested
         if field == "payerName":
             # Formatting variants of the same name ("Northwind" vs "Northwind, Inc.") are not a conflict.
             distinct = {_normalize_name(value) for _, value in values}
@@ -165,6 +187,7 @@ BLOCKING_WARNINGS = {
     "payment_line_count_mismatch",
     "no_payment_lines_found",
     "payment_total_mismatch",
+    "amounts_not_itemized",
     "conflicting_payerName",
     "conflicting_remittanceDate",
     "conflicting_paymentTotal",
@@ -174,6 +197,7 @@ BLOCKING_WARNINGS = {
     "content_understanding_analysis_failed",
     "candidate_content_unavailable",
     "unsupported_content_type",
+    "spreadsheet_parse_failed",
     "header_row_not_detected; first two columns used and require review",
     "spreadsheet_error_cell",
     "formula_unresolved",
@@ -189,13 +213,19 @@ def is_blocking(warning: str, extra_blocking=()) -> bool:
 PER_PAYMENT_CODES = ("conflicting_remittanceDate", "conflicting_paymentReference", "conflicting_paymentTotal", "payment_total_mismatch")
 
 
+_UNITEMIZED_SYMPTOMS = ("missing_or_invalid_amount_paid", "payment_total_mismatch")
+
+
 def split_warnings(warnings, extra_blocking=()) -> tuple[list[str], list[str]]:
     """(review reasons, notes): the single source of truth the UI and summaries use."""
     unique = sorted(set(warnings or []))
     several = "multiple_payments_in_email" in unique
+    # One payment with no per-PRO amounts explains the missing amounts and the gap to the total.
+    unitemized = "amounts_not_itemized" in unique
 
     def blocking(w):
-        return is_blocking(w, extra_blocking) and not (several and w in PER_PAYMENT_CODES)
+        return (is_blocking(w, extra_blocking) and not (several and w in PER_PAYMENT_CODES)
+                and not (unitemized and w in _UNITEMIZED_SYMPTOMS))
 
     return [w for w in unique if blocking(w)], [w for w in unique if not blocking(w)]
 
@@ -245,7 +275,60 @@ def _stable_line_key(pro: str, amount: Decimal, line: dict) -> tuple:
     )
 
 
-def validate_and_merge(
+# Sources whose lines code read and checked (spreadsheets, body tables) - not a model's reading.
+_CODE_READ = {"deterministic_parser", "html_table+content_understanding", "text_table+content_understanding",
+              "stacked_records+content_understanding"}
+
+
+def validate_and_merge(candidate_results: list[dict], **options) -> dict:
+    """Validate and reconcile. When the sources don't reconcile, a source read in code whose lines alone -
+    or one amount column of a sheet read as a statement - add up exactly to the stated payment is the
+    payment detail: the run is re-validated with those lines, noted, and the other sources' lines set
+    aside. One rule, not per layout: arithmetic decides, never a label. Nothing changes unless exactly
+    one such reading exists."""
+    result = _validate(candidate_results, **options)
+    stated = _decimal((result.get("remittanceMetadata") or {}).get("paymentTotal"))
+    if result["quality"].get("isReconciled") is not False or not stated:
+        return result
+    proof = _proven_payment_detail(candidate_results, abs(stated))
+    if proof is None:
+        return result
+    source, column, lines = proof
+    superseded = sum(len(c.get("paymentLines") or []) for c in candidate_results if c is not source)
+    rebuilt = [
+        {**c, "paymentLines": lines, "warnings": [*(c.get("warnings") or []), "payment_detail_proven_by_total"]} if c is source
+        else {**c, "paymentLines": []}
+        for c in candidate_results
+    ]
+    # A total stated as negative (a payer's ledger view of the same payment) is the payment's amount.
+    proven = _validate(rebuilt, **{**options, "stated_total": float(abs(stated))} if stated < 0 else options)
+    if not proven["quality"].get("isReconciled"):
+        return result
+    proven["quality"]["paymentDetailProof"] = {
+        "candidateId": source.get("candidateId"), "column": column, "lineCount": len(lines),
+        "supersededLineCount": superseded, "statedTotalSignCorrected": stated < 0,
+    }
+    return proven
+
+
+def _proven_payment_detail(candidates: list[dict], target: Decimal):
+    """(source, column header or None, lines) for the one code-read reading that sums exactly to target,
+    or None when there is no such reading or more than one distinct one."""
+    found = {}
+    for candidate in candidates:
+        if candidate.get("strategy") not in _CODE_READ:
+            continue
+        options = [(None, candidate.get("paymentLines") or [])]
+        options += [(column.get("header"), column.get("lines") or []) for column in candidate.get("amountColumns") or []]
+        for header, lines in options:
+            amounts = [_decimal(line.get("amountPaid")) for line in lines]
+            if len(lines) >= 2 and all(amount is not None for amount in amounts) and sum(amounts) == target:
+                key = tuple(sorted((str(line.get("proInvoiceNumber")), amount) for line, amount in zip(lines, amounts)))
+                found.setdefault(key, (candidate, header, lines))  # identical columns (net = gross) are one reading
+    return next(iter(found.values())) if len(found) == 1 else None
+
+
+def _validate(
     candidate_results: list[dict],
     *,
     stated_total=None,
@@ -314,6 +397,11 @@ def validate_and_merge(
     duplicate_groups = []
     seen: dict[tuple, int] = {}
     seen_by_pro: dict[str, list[Decimal]] = {}
+    # The same payment in two sources (a PDF and its spreadsheet) is matched on PRO + amount alone: one
+    # reader fills the invoice date or reference, another doesn't. Each line matches at most one line
+    # of another source; within one source the full key applies, so a PRO paid twice stays visible.
+    seen_across: dict[tuple, list[int]] = {}
+    claimed: set[tuple[str, int]] = set()
     # A candidate whose lines carry no amounts (e.g. a zero-balance exceptions image) is not the
     # payment detail; skip its lines when another candidate provides real amounts, so it does not
     # pollute the result with false missing-amount flags.
@@ -356,6 +444,18 @@ def validate_and_merge(
             source.setdefault("sourceType", candidate.get("sourceType"))
             if pro_number and amount is not None:
                 key = _stable_line_key(pro_number, amount, line)
+                across = (pro_number, amount.quantize(Decimal("0.01")))
+                other_source = next(
+                    (index for index in seen_across.get(across, [])
+                     if payment_lines[index]["source"].get("candidateId") != candidate_id and (candidate_id, index) not in claimed),
+                    None,
+                )
+                if key not in seen and other_source is not None:
+                    claimed.add((candidate_id, other_source))
+                    duplicate_groups.append({"duplicateOfLineIndex": other_source, "proInvoiceNumber": pro_number,
+                                             "amountPaid": float(amount), "duplicateCandidateId": candidate_id})
+                    payment_lines[other_source]["source"].setdefault("duplicateCandidateIds", []).append(candidate_id)
+                    continue
                 if key in seen:
                     original_index = seen[key]
                     duplicate_groups.append(
@@ -370,6 +470,7 @@ def validate_and_merge(
                     continue
                 else:
                     seen[key] = len(payment_lines)
+                    seen_across.setdefault(across, []).append(len(payment_lines))
                     # The same PRO with different amounts is a conflict - unless the lines belong to
                     # different payments (sub-tables with their own Totals): an invoice paid in parts.
                     group = (candidate_id, source["paymentGroup"]) if source.get("paymentGroup") else None
@@ -400,6 +501,10 @@ def validate_and_merge(
         is_reconciled = abs(difference) <= tolerance
         if not is_reconciled:
             warnings.append("payment_total_mismatch")
+        # One payment for several PROs with no amount for any of them (e.g. PROs listed together in a bank
+        # description): the split is the analyst's - from open balances, or asked of the payer.
+        if len(payment_lines) >= 2 and all(line.get("proInvoiceNumber") and line.get("amountPaid") is None for line in payment_lines):
+            warnings.append("amounts_not_itemized")
     else:
         warnings.append("payment_total_not_provided")
         if "column_mapping_unverified" in warnings:

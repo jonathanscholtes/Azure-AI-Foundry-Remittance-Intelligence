@@ -377,6 +377,49 @@ class OrchestrationWorkflowTests(unittest.TestCase):
         self.assertEqual(result["paymentLines"][0]["source"]["method"], "resolution_expert")
         self.assertIn("resolve_extraction", harness.activity_calls)
 
+    def test_expert_names_detail_behind_a_link_as_the_review_reason(self):
+        # No source has lines; the body's wording is not caught by the link pattern, but the expert reads
+        # it and says the detail sits behind a portal link - that becomes the run's reason and headline.
+        def route(candidates, payloads, **kwargs):
+            items, raws = _route(candidates, payloads, **kwargs)
+            items[0]["paymentLines"] = []
+            if items[0]["sourceType"] == "message_body":
+                items[0]["remittanceMetadata"]["paymentTotal"] = 248.36
+            return items, raws
+
+        def expert(agent, case, tools):
+            return json.dumps({"outcome": "cannot_resolve", "lines": [], "threadKind": "detail_behind_link", "details": [],
+                               "confidence": 0.9, "explanation": "The email only links to the payer's portal; no lines are in it."}), []
+
+        harness = Harness("Your funds are on the way. Open https://pay.example.com/r/AB12 for the breakdown.", route=route, resolution=expert)
+        harness.run()
+        result = harness.final_result()
+        self.assertEqual(result["status"], "ReviewRequired")
+        self.assertIn("external_link_not_fetched", result["quality"]["reviewReasons"])
+        self.assertEqual(result["resolution"]["threadWarning"], "external_link_not_fetched")
+        self.assertEqual(result["assurance"]["headline"], "Remittance detail behind a link")
+
+    def test_a_run_with_lines_never_takes_the_experts_no_remittance_verdict(self):
+        # PROs listed without amounts: the expert may answer "no remittance" with no lines, but the email
+        # plainly remits - its verdict must not become the run's reason.
+        def route(candidates, payloads, **kwargs):
+            items, raws = _route(candidates, payloads, **kwargs)
+            if items[0]["sourceType"] == "message_body":
+                items[0]["remittanceMetadata"]["paymentTotal"] = 300.0
+            else:
+                items[0]["paymentLines"] = [{"proInvoiceNumber": pro, "amountPaid": None} for pro in ("001234567", "001234568")]
+            return items, raws
+
+        def expert(agent, case, tools):
+            return json.dumps({"outcome": "cannot_resolve", "lines": [], "threadKind": "no_remittance", "details": [],
+                               "confidence": 0.7, "explanation": "No amount per PRO."}), []
+
+        harness = Harness("ACH confirmation attached.", route=route, resolution=expert)
+        harness.run()
+        reasons = harness.final_result()["quality"]["reviewReasons"]
+        self.assertIn("amounts_not_itemized", reasons)
+        self.assertNotIn("no_remittance_in_email", reasons)
+
     def test_unresolved_run_keeps_its_lines_and_explains(self):
         def route(candidates, payloads, **kwargs):
             items, raws = _route(candidates, payloads, **kwargs)
@@ -460,6 +503,43 @@ class ThrottleTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             activities.throttled_analyze(analyze, sleep=lambda _s: None)()
+
+
+class StackedRecordExtractionTests(unittest.TestCase):
+    BODY = "\r\n".join([
+        "Payment Number: 50000099", "Total Amount: $519.07", "",
+        "Reference        Order          Gross        Net",
+        "00900000201          PO 7100301     $200.00", "Adjustment        $8.62", "$208.62",
+        "00900000202          PO 7100302     $310.45", "$310.45",
+        "Questions about this payment? Contact accounts payable.",
+    ])
+
+    def test_stacked_record_body_is_read_directly_and_cu_gets_only_the_condensed_text(self):
+        blob = FakeBlobService()
+        blob.blobs[("candidates", f"{PROCESSING_ID}/message-content.txt")] = self.BODY.encode("utf-8")
+        sent = {}
+
+        def route(candidates, payloads, **_kwargs):
+            sent.update(payloads)
+            return _route(candidates, payloads)
+
+        candidate = {"candidateId": "message-body", "sourceType": "message_body", "score": 40,
+                     "classification": "remittance_candidate",
+                     "payloadBlobUri": f"candidates/{PROCESSING_ID}/message-content.txt", "payloadContentType": "text/plain"}
+        original = activities.route_candidates
+        activities.route_candidates = route
+        try:
+            result = activities.extract_candidate(
+                {"processingId": PROCESSING_ID, "runId": "run-1", "candidate": candidate}, blob_service=blob)
+        finally:
+            activities.route_candidates = original
+
+        self.assertEqual(result["strategy"], "stacked_records+content_understanding")
+        self.assertEqual([(l["proInvoiceNumber"], l["amountPaid"]) for l in result["normalized"]["paymentLines"]],
+                         [("00900000201", "208.62"), ("00900000202", "310.45")])
+        cu_text = sent["message-body"][0].decode("utf-8")
+        self.assertIn("Total Amount: $519.07", cu_text)
+        self.assertNotIn("00900000201", cu_text)
 
 
 if __name__ == "__main__":

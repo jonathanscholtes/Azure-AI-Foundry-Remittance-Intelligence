@@ -505,6 +505,20 @@ def _amount_key(line: dict):
         return None
 
 
+def _grounded(line: dict):
+    return (line.get("source") or {}).get("grounded")
+
+
+def _same_overlap_line(candidate: dict, existing: dict) -> bool:
+    """Two copies of one overlap row: same amount (or one side missing), or exactly one copy grounded.
+    A chunk can start mid-record, so its first PRO gets paired with the previous row's trailing amount;
+    grounding flags that copy, and the grounded twin from the previous chunk is the real row."""
+    amount, other = _amount_key(candidate), _amount_key(existing)
+    if amount is None or other is None or amount == other:
+        return True
+    return {_grounded(candidate), _grounded(existing)} == {True, False}
+
+
 def _better_copy(candidate: dict, existing: dict) -> bool:
     """Prefer the copy that carries an amount, then the one grounded in its source."""
     if _amount_key(existing) is None and _amount_key(candidate) is not None:
@@ -519,9 +533,10 @@ def merge_normalized_analyses(
     every payment line in document order.
 
     Only the chunk overlap is de-duplicated: a line is dropped when it repeats a line of the
-    *previous* chunk (same PRO, same amount or one side missing) and - when ``overlaps`` is given -
-    its PRO sits in the text this chunk shares with the previous one. A PRO legitimately paid on
-    several rows (partial payments, adjustments) is therefore kept, not collapsed to one row."""
+    *previous* chunk (same PRO; same amount, one side missing, or one copy failed grounding) and -
+    when ``overlaps`` is given - its PRO sits in the text this chunk shares with the previous one. A
+    PRO legitimately paid on several rows (partial payments, adjustments) is grounded on each row, so
+    it is kept, not collapsed to one row."""
     metadata = {field_name: None for field_name in _METADATA_FIELDS}
     metadata_evidence: dict = {}
     warnings: list[str] = []
@@ -545,10 +560,8 @@ def merge_normalized_analyses(
             pro = str(line.get("proInvoiceNumber") or "").strip()
             match = None
             if pro and part_index > 0 and (overlap is None or pro in overlap):
-                amount = _amount_key(line)
                 for index in previous.get(pro, []):
-                    other = _amount_key(merged_lines[index])
-                    if index not in claimed and (amount is None or other is None or amount == other):
+                    if index not in claimed and _same_overlap_line(line, merged_lines[index]):
                         match = index
                         break
             if match is not None:

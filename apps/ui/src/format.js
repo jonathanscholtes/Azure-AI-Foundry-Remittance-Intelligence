@@ -107,6 +107,8 @@ export function statusLabel(status) {
 const WARNING_LABELS = {
   payment_total_mismatch: "Payment total does not match the sum of lines",
   payment_total_not_provided: "No stated payment total",
+  amounts_not_itemized: "One payment for several PROs, no amount per PRO",
+  payment_detail_proven_by_total: "Payment detail chosen because its lines add up exactly to the payment",
   no_payment_lines_found: "No payment lines found",
   conflicting_payment_line: "Same PRO with different amounts",
   missing_payer_name: "Payer name missing",
@@ -142,6 +144,7 @@ const WARNING_LABELS = {
   content_understanding_analysis_failed: "Document analysis failed",
   content_understanding_not_configured: "Document analysis not configured",
   unsupported_content_type: "Unsupported attachment type",
+  spreadsheet_parse_failed: "Spreadsheet could not be read",
   candidate_content_unavailable: "Source content unavailable",
   message_too_large: "Message exceeds the size limit",
   unsupported_extension: "Unsupported file type",
@@ -232,6 +235,8 @@ export function resolutionSkipText(resolution) {
     const n = resolution.paymentCount;
     return `not needed - the gap to the stated total is explained by ${n ? `${n} ` : "several "}separate payments`;
   }
+  if (resolution?.reason === "inquiry_thread_for_analyst") return "not called - a collections inquiry is for the analyst";
+  if (resolution?.reason === "no_remittance_for_analyst") return "not called - the email carries no remittance";
   return "not needed";
 }
 

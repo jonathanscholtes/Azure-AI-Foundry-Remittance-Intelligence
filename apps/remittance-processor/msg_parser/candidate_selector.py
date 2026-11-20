@@ -50,6 +50,7 @@ CONTENT_UNDERSTANDING_EXTENSIONS = {
     ".heif",
 }
 REMITTANCE_TERMS = re.compile(r"remit|payment|ach|invoice|detail|statement", re.IGNORECASE)
+MIN_IMAGE_PIXELS = 50  # Content Understanding's smallest analyzable image side
 LOW_VALUE_ASSET_NAME = re.compile(r"logo|signature|icon|tracking|pixel|facebook|twitter|linkedin", re.IGNORECASE)
 
 
@@ -113,9 +114,16 @@ def select_candidates(
         # so retain them for audit without flagging an "unrecognized attachment".
         is_inline_decorative_image = item.get("isInline", False) and extension in {".gif", ".bmp"}
         is_named_low_value_asset = bool(LOW_VALUE_ASSET_NAME.search(name))
+        pixels = item.get("imagePixels")
+        # Content Understanding rejects images under 50 x 50 px (a service limit), and an image that small
+        # - a signature icon or badge - cannot hold a remittance.
+        is_below_analysis_minimum = bool(pixels) and min(pixels) < MIN_IMAGE_PIXELS
         if digest and digest in seen_hashes:
             item["classification"] = "duplicate_candidate"
             reasons.append("Duplicate content hash")
+        elif is_below_analysis_minimum:
+            item["classification"] = "ignored_candidate"
+            reasons.append(f"Image {pixels[0]} x {pixels[1]} px is below the {MIN_IMAGE_PIXELS} px analysis minimum; retained for audit")
         elif is_small_inline_image or is_inline_decorative_image or is_named_low_value_asset:
             item["classification"] = "ignored_candidate"
             reasons.append("Likely inline or decorative asset; retained for audit")

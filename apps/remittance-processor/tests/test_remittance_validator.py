@@ -69,6 +69,100 @@ class RemittanceValidatorTests(unittest.TestCase):
         self.assertEqual(validate_and_merge([cu, sheet])["analyzerVersion"], "ach.remittance.v2")
         self.assertEqual(validate_and_merge([sheet])["analyzerVersion"], "none")
 
+    def _proof_sources(self, column_amounts=(100.00, 50.25, 24.75), stated=175.00, strategy="deterministic_parser"):
+        body = {"candidateId": "message-body", "sourceType": "message_body", "score": 40, "strategy": "content_understanding",
+                "remittanceMetadata": {"payerName": "Fabrikam", "paymentTotal": stated},
+                "paymentLines": [{"proInvoiceNumber": "70000001", "amountPaid": 900.0}]}  # a model's misreading of the thread
+        sheet = {"candidateId": "doc-002", "sourceType": "attachment", "score": 90, "strategy": strategy, "remittanceMetadata": {},
+                 "paymentLines": [], "warnings": ["spreadsheet_no_paid_amounts"],
+                 "amountColumns": [
+                     {"column": 2, "header": "Quantity", "lines": [{"proInvoiceNumber": f"00123456{i}", "amountPaid": q} for i, q in enumerate((3, 1, 2))]},
+                     {"column": 5, "header": "Invoice Charge",
+                      "lines": [{"proInvoiceNumber": f"00123456{i}", "amountPaid": a} for i, a in enumerate(column_amounts)]},
+                 ]}
+        return [body, sheet]
+
+    def test_a_code_read_column_that_adds_up_exactly_to_the_payment_is_the_detail(self):
+        result = validate_and_merge(self._proof_sources(), tolerance=Decimal("0.01"))
+        quality = result["quality"]
+        self.assertTrue(quality["isReconciled"])
+        self.assertEqual(result["status"], "Extracted")
+        self.assertEqual([line["amountPaid"] for line in result["paymentLines"]], [100.0, 50.25, 24.75])
+        self.assertIn("payment_detail_proven_by_total", quality["notes"])
+        self.assertEqual(quality["paymentDetailProof"]["column"], "Invoice Charge")
+        self.assertEqual(quality["paymentDetailProof"]["supersededLineCount"], 1)  # the body's misreading, set aside
+        # A total written as negative (a ledger view of the same payment) is matched by its amount.
+        negative = validate_and_merge(self._proof_sources(stated=-175.00), tolerance=Decimal("0.01"))
+        self.assertTrue(negative["quality"]["isReconciled"])
+        self.assertEqual(negative["remittanceMetadata"]["paymentTotal"], 175.0)
+
+    def test_no_proof_without_an_exact_single_code_read_match(self):
+        off_by_a_cent = validate_and_merge(self._proof_sources(column_amounts=(100.00, 50.25, 24.74)))
+        self.assertFalse(off_by_a_cent["quality"]["isReconciled"])
+        self.assertNotIn("paymentDetailProof", off_by_a_cent["quality"])
+        read_by_a_model = validate_and_merge(self._proof_sources(strategy="content_understanding"))
+        self.assertNotIn("paymentDetailProof", read_by_a_model["quality"])
+        two_readings = self._proof_sources()
+        two_readings[1]["amountColumns"].append(
+            {"column": 6, "header": "Other", "lines": [{"proInvoiceNumber": f"00999999{i}", "amountPaid": a} for i, a in enumerate((75.0, 100.0))]})
+        self.assertNotIn("paymentDetailProof", validate_and_merge(two_readings)["quality"])
+
+    def test_the_same_payment_in_two_sources_counts_once_even_when_only_one_has_dates(self):
+        pdf = {"candidateId": "doc-001", "sourceType": "attachment", "score": 100, "strategy": "content_understanding",
+               "remittanceMetadata": {"paymentTotal": 30.00},
+               "paymentLines": [{"proInvoiceNumber": "001234567", "amountPaid": 10.0, "invoiceDate": "2026-09-01", "lineReference": "INV-1"},
+                                {"proInvoiceNumber": "001234568", "amountPaid": 20.0, "invoiceDate": "2026-09-02", "lineReference": "INV-2"}]}
+        sheet = {"candidateId": "doc-002", "sourceType": "attachment", "score": 90, "strategy": "deterministic_parser",
+                 "remittanceMetadata": {},
+                 "paymentLines": [{"proInvoiceNumber": "001234567", "amountPaid": 10.0}, {"proInvoiceNumber": "001234568", "amountPaid": 20.0}]}
+        result = validate_and_merge([pdf, sheet], tolerance=Decimal("0.01"))
+        self.assertEqual(len(result["paymentLines"]), 2)
+        self.assertTrue(result["quality"]["isReconciled"])
+        self.assertEqual(len(result["quality"]["duplicateGroups"]), 2)
+        # A PRO paid twice within ONE source is still two lines, not merged.
+        twice = {**sheet, "paymentLines": sheet["paymentLines"] + [{"proInvoiceNumber": "001234567", "amountPaid": 10.0, "lineReference": "B"}]}
+        self.assertEqual(len(validate_and_merge([twice], tolerance=Decimal("0.01"))["paymentLines"]), 3)
+
+    def test_one_payment_for_several_pros_without_amounts_is_named(self):
+        source = {"candidateId": "doc-002", "sourceType": "attachment", "score": 90,
+                  "remittanceMetadata": {"payerName": "Fabrikam", "paymentTotal": 300.00},
+                  "paymentLines": [{"proInvoiceNumber": pro, "amountPaid": None} for pro in ("001234567", "001234568", "001234569")]}
+        quality = validate_and_merge([source], tolerance=Decimal("0.01"))["quality"]
+        self.assertIn("amounts_not_itemized", quality["warnings"])
+        self.assertEqual(quality["reviewReasons"], ["amounts_not_itemized"])  # the symptoms become notes
+        self.assertIn("payment_total_mismatch", quality["notes"])
+        self.assertTrue(quality["requiresReview"])
+        # One PRO without an amount, or some lines with amounts, is not this case.
+        partial = {**source, "paymentLines": [{"proInvoiceNumber": "001234567", "amountPaid": 100.0},
+                                              {"proInvoiceNumber": "001234568", "amountPaid": None}]}
+        self.assertNotIn("amounts_not_itemized", validate_and_merge([partial])["quality"]["warnings"])
+
+    def test_a_logo_attachment_never_contests_the_payer(self):
+        body = {"candidateId": "message-body", "sourceType": "message_body", "score": 40,
+                "remittanceMetadata": {"payerName": "Fabrikam Inc.", "paymentTotal": 15.00},
+                "paymentLines": [{"proInvoiceNumber": "001234567", "amountPaid": 15.00}]}
+        logo = {"candidateId": "doc-002", "sourceType": "attachment", "score": 70,
+                "remittanceMetadata": {"payerName": "Northwind Signs"}, "paymentLines": []}
+        result = validate_and_merge([body, logo], tolerance=Decimal("0.01"))
+        self.assertEqual(result["remittanceMetadata"]["payerName"], "Fabrikam Inc.")
+        self.assertNotIn("conflicting_payerName", result["quality"]["warnings"])
+        # Alone, it still names the payer (better than nothing; the analyst sees it).
+        alone = validate_and_merge([{**logo, "paymentLines": [{"proInvoiceNumber": "001234567", "amountPaid": 15.00}]}])
+        self.assertEqual(alone["remittanceMetadata"]["payerName"], "Northwind Signs")
+
+    def test_spreadsheet_metadata_is_chosen_like_a_document_but_never_conflicts(self):
+        body = {"candidateId": "message-body", "sourceType": "message_body", "score": 40,
+                "remittanceMetadata": {"payerName": "Fabrikam and Sons, Inc."}, "paymentLines": []}
+        sheet = {"candidateId": "doc-001", "sourceType": "attachment", "score": 90, "metadataRole": "advisory",
+                 "remittanceMetadata": {"payerName": "Fabrikam & Sons", "remittanceDate": "2026-09-15", "paymentTotal": 15.00},
+                 "paymentLines": [{"proInvoiceNumber": "001234567", "amountPaid": 10.00},
+                                  {"proInvoiceNumber": "001234568", "amountPaid": 5.00}]}
+        result = validate_and_merge([body, sheet], tolerance=Decimal("0.01"))
+        self.assertEqual(result["remittanceMetadata"]["payerName"], "Fabrikam & Sons")  # the document outranks the email
+        self.assertEqual(result["remittanceMetadata"]["remittanceDate"], "2026-09-15")
+        self.assertNotIn("conflicting_payerName", result["quality"]["warnings"])
+        self.assertTrue(result["quality"]["isReconciled"])  # the sheet's total reconciles the lines
+
     def test_exact_duplicate_lines_are_deduplicated_with_lineage(self):
         result = validate_and_merge(
             [
