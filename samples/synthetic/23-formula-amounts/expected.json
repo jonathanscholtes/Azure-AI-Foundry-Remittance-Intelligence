@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "23-formula-amounts",
+  "source": "23-formula-amounts.msg",
+  "verified": null,
+  "notes": "Synthetic sample. Spreadsheet with formula amounts and an unlabelled =SUM total. Every third Settled amount is a formula (=Units*Unit Rate) whose value Excel saved; the table closes with a bare =SUM and a labelled repeat of it. The paid-on date is only in the sheet's title block, and the column to use (Settled) sits beside Units and Unit Rate.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Tailwind Traders",
+      "remittanceDate": "2026-10-28",
+      "paymentTotal": 25491.88,
+      "paymentReference": "TT-041641"
+    },
+    "issues": []
+  }
+}

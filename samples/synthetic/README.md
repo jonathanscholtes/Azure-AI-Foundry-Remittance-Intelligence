@@ -26,5 +26,8 @@ Each folder holds the `.msg`, `expected.json` and `expected-lines.csv` in the go
 | `18-edi-820-body` | ACH CCD+/CTX remittance as EDI 820 segments in the body | 5 | Completed |
 | `19-duplicate-line` | A PRO paid twice for the same amount in one remittance | 7 | ReviewRequired - payer:duplicate_payment |
 | `20-conflicting-amounts` | One PRO on two lines with different amounts | 8 | ReviewRequired - payer:conflicting_payment_line |
+| `21-stacked-text-report` | A text report where each payment spans several lines | 36 | Completed |
+| `22-xls-named-xlsx` | An Excel 97-2003 (.xls) workbook named .xlsx | 12 | Completed |
+| `23-formula-amounts` | Spreadsheet with formula amounts and an unlabelled =SUM total | 18 | Completed |
 
-Regenerate with `.venv\Scripts\python.exe scripts/synthetic_samples/generate.py` (Windows with Outlook).
+Regenerate with `.venv\Scripts\python.exe scripts/synthetic_samples/generate.py` (Windows with Outlook and Excel; scenario 22 also needs `xlwt`).

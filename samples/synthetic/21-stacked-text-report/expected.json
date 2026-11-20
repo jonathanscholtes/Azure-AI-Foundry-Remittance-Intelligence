@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "21-stacked-text-report",
+  "source": "21-stacked-text-report.msg",
+  "verified": null,
+  "notes": "Synthetic sample. A text report where each payment spans several lines. Body-only remittance: each payment is a record line (PRO, shipment, base amount), optional surcharge, deduction or reversal lines, then a line with the settled amount alone. The settled amount is what was paid; the header states the total.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Blue Yonder Airlines Cargo",
+      "remittanceDate": "2026-10-26",
+      "paymentTotal": 81982.27,
+      "paymentReference": "BY-139629"
+    },
+    "issues": []
+  }
+}

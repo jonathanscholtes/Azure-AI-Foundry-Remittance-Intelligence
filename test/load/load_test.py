@@ -237,6 +237,8 @@ def main() -> int:
         args.results.parent.mkdir(parents=True, exist_ok=True)
         args.results.write_text(json.dumps(results, indent=2))
         print(f"[load] results -> {args.results}")
+        if not args.dry_run:
+            print(f"[load] metrics by message class: python test/load/load_report.py --api {args.api} --results {args.results} --wait")
     return 0 if all(r["status"] in ("queued", "planned") for r in results) else 1
 
 

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "id": "22-xls-named-xlsx",
+  "source": "22-xls-named-xlsx.msg",
+  "verified": null,
+  "notes": "Synthetic sample. An Excel 97-2003 (.xls) workbook named .xlsx. ERP export saved in the legacy binary format under an .xlsx name; the payment date and total are only in the workbook's title block.",
+  "expected": {
+    "status": "Completed",
+    "metadata": {
+      "payerName": "Southridge Video",
+      "remittanceDate": "2026-10-27",
+      "paymentTotal": 33637.72,
+      "paymentReference": "SV1897459"
+    },
+    "issues": []
+  }
+}

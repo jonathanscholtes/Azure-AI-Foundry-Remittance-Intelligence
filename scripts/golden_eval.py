@@ -3,10 +3,11 @@
 Every change - code, Content Understanding analyzer, prompt, agent, or model version - is measured
 against the same labeled samples, so behavior changes are a number, not a guess.
 
-The golden set lives in samples/golden/ (git-ignored: real messages and the expected results labeled
-from them are never committed). One folder per sample:
+The golden set lives in the folder named by GOLDEN_DIR (environment or the repo .env) - keep it
+outside the repository, since it holds real messages, the labels drawn from them and the cached
+service responses. Without the setting it is samples/golden/ (git-ignored). One folder per sample:
 
-    samples/golden/<sample-id>/
+    <GOLDEN_DIR>/<sample-id>/
         <original>.msg | .eml       the source message, byte for byte
         expected.json               expected metadata, status, triage issues (schemas/golden-sample-v1.json)
         expected-lines.csv          expected payment lines: pro,amount (one row per line, raw PRO as written)
@@ -15,12 +16,12 @@ Commands:
     add      copy a message into the set and draft its labels from the current pipeline output
              (labels start unverified - a person must check them against the source, then `verify`)
     verify   mark a sample's labels as checked by a person
-    run      run every sample and score it; writes samples/golden/reports/<timestamp>-<mode>.json and
+    run      run every sample and score it; writes <GOLDEN_DIR>/reports/<timestamp>-<mode>.json and
              compares with the previous report of the same mode
 
 Modes for add/run:
     local    in-process pipeline (intake, table readers, CU, validation, triage) - no agent call.
-             CU responses are cached by content hash in samples/golden/.cache/cu/, so a code change
+             CU responses are cached by content hash in <GOLDEN_DIR>/.cache/cu/, so a code change
              re-scores in seconds at no cost. --cu cached (default: fail on a cache miss) | live (call CU
              on a miss) | refresh (always call CU - use after analyzer/model changes).
     api      end to end through the deployed pipeline (upload or reprocess, poll, read the result),
@@ -59,7 +60,22 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 PROCESSOR = REPO / "apps" / "remittance-processor"
-GOLDEN = REPO / "samples" / "golden"
+
+
+def _golden_dir() -> Path:
+    """GOLDEN_DIR from the environment or the repo .env, else samples/golden. Point it outside the
+    repository so real remittances, their labels and the cached service responses never sit in it."""
+    value = os.environ.get("GOLDEN_DIR", "").strip()
+    env = REPO / ".env"
+    if not value and env.exists():
+        for line in env.read_text(encoding="utf-8").splitlines():
+            name, _, rest = line.strip().partition("=")
+            if name.strip() == "GOLDEN_DIR":
+                value = rest.strip().strip('"').strip("'")
+    return Path(value).expanduser() if value else REPO / "samples" / "golden"
+
+
+GOLDEN = _golden_dir()
 CACHE = GOLDEN / ".cache" / "cu"
 REPORTS = GOLDEN / "reports"
 TERMINAL = {"Completed", "ReviewRequired", "Failed", "DuplicateSkipped"}

@@ -4,7 +4,9 @@ Every company, person, address, PRO number and amount is invented, so the set ca
 used in any environment. The scenarios cover the remittance shapes the pipeline must
 handle: tables in the email body, PDF / Excel / image / scanned attachments, a TIFF without a file
 extension, very large tables, forwarded threads with several payments, disputes, short pays,
-credits, duplicates, links to a portal, EDI addenda and a Spanish-language remittance.
+credits, duplicates, links to a portal, EDI addenda, a Spanish-language remittance, and real-world
+file quirks: a text report with multi-line records, a legacy .xls named .xlsx, and formula amounts
+closed by an unlabelled =SUM.
 
 Output (default samples/synthetic/, tracked in git; only _build/ is ignored):
 
@@ -24,8 +26,8 @@ PROs are 9 digits (valid under the neutral 6-12 digit rule and under typical 9-1
 organization rules). The payee is the fictional "Foundry Freight Corp" - add it to RECEIVING_ORG_ALIASES when
 testing a configured deployment so it is never read as the payer.
 
-Requires Windows with Outlook installed (the .msg files are written through the Outlook object
-model) and openpyxl.
+Requires Windows with Outlook and Excel installed (the .msg files are written through the Outlook
+object model; Excel saves the formula values), openpyxl, and xlwt for the legacy .xls scenario.
 
     .venv\\Scripts\\python.exe scripts/synthetic_samples/generate.py [--out samples/synthetic] [--only id ...]
 """
@@ -72,6 +74,11 @@ class Line:
 def money(value: Decimal, symbol: str = "") -> str:
     sign = "-" if value < 0 else ""
     return f"{sign}{symbol}{abs(value):,.2f}"
+
+
+def report_money(value: Decimal) -> str:
+    """Accounting style, as printed reports write it: $1,234.56 and ($2.52)."""
+    return f"(${abs(value):,.2f})" if value < 0 else f"${value:,.2f}"
 
 
 def total(lines: list[Line]) -> Decimal:
@@ -298,6 +305,68 @@ def remittance_xlsx(path: Path, payer: str, header: list[tuple[str, str]], colum
     book.save(path)
 
 
+def legacy_xls(source: Path, target: Path) -> None:
+    """Copy a workbook's values and number formats into Excel 97-2003 (BIFF8) with xlwt - the binary format
+    many ERP exports still write. (Excel can't be used: policies commonly block saving the legacy format.)"""
+    try:
+        import xlwt
+    except ImportError:
+        raise SystemExit("22-xls-named-xlsx needs xlwt to write a legacy .xls: .venv\\Scripts\\python.exe -m pip install xlwt==1.3.0")
+    from openpyxl import load_workbook
+
+    book, out = load_workbook(source), xlwt.Workbook()
+    for sheet in book.worksheets:
+        target_sheet = out.add_sheet(sheet.title)
+        for row in sheet.iter_rows():
+            for cell in row:
+                if cell.value is not None:
+                    style = xlwt.easyxf(num_format_str=cell.number_format) if cell.number_format != "General" else xlwt.Style.default_style
+                    target_sheet.write(cell.row - 1, cell.column - 1, cell.value, style)
+    out.save(str(target))
+
+
+def payment_summary_xlsx(path: Path, payer: str, paid: date, ref: str, rows: list[tuple]) -> None:
+    """A hand-built payment summary: a title block (payer, remit-to, paid-on date), then a table whose
+    Settled column mixes typed values and formulas (=Units*Unit Rate), closed by a bare =SUM with no
+    "Total" label and a labelled repeat of it further down. Excel saves the formula values
+    (save_workbooks.ps1). rows: (service date, units, unit rate, settled, is_formula, pro)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "Summary"
+    sheet["A1"] = payer
+    sheet["A1"].font = Font(bold=True, size=14)
+    sheet["A2"] = "4410 Harbor Way, Lakeside, ST 00002"
+    sheet["A4"], sheet["A5"] = "Remit To", PAYEE
+    sheet["D4"], sheet["E4"] = "Paid On", paid
+    sheet["E4"].number_format = "mm/dd/yyyy"
+    sheet["D5"], sheet["E5"] = "Method", "ACH"
+    sheet["D6"], sheet["E6"] = "Reference", ref
+    for column, label in zip("ABCDEF", ("PRO", "Service Date", "Route", "Units", "Unit Rate", "Settled")):
+        sheet[f"{column}8"] = label
+        sheet[f"{column}8"].font = Font(bold=True)
+    first = 9
+    for offset, (service_date, units, rate, settled, is_formula, pro) in enumerate(rows):
+        row = first + offset
+        sheet[f"A{row}"], sheet[f"B{row}"], sheet[f"C{row}"] = int(pro), service_date, f"Lane {offset % 4 + 1}"
+        sheet[f"D{row}"], sheet[f"E{row}"] = units, rate
+        sheet[f"F{row}"] = f"=D{row}*E{row}" if is_formula else float(settled)
+        sheet[f"B{row}"].number_format = "mm/dd/yyyy"
+        sheet[f"F{row}"].number_format = "#,##0.00"
+    last = first + len(rows) - 1
+    total_row, repeat_row = last + 2, last + 5
+    sheet[f"F{total_row}"] = f"=SUM(F{first}:F{last})"
+    sheet[f"C{repeat_row}"], sheet[f"F{repeat_row}"] = f"Settled under {ref}", f"=F{total_row}"
+    for row in (total_row, repeat_row):
+        sheet[f"F{row}"].number_format = "#,##0.00"
+        sheet[f"F{row}"].font = Font(bold=True)
+    for column, width in zip("ABCDEF", (14, 14, 10, 8, 10, 14)):
+        sheet.column_dimensions[column].width = width
+    book.save(path)
+
+
 # --- images (rendered by render_images.ps1) --------------------------------------------------------
 
 
@@ -402,6 +471,7 @@ class Builder:
         self.work = work
         self.images: list[dict] = []
         self.scans: list[tuple[Path, Path]] = []  # (jpeg, pdf) pairs wrapped after rendering
+        self.workbooks: list[dict] = []  # {source, target, format}: re-saved through Excel (save_workbooks.ps1)
 
     def folder(self, scenario_id: str) -> Path:
         path = self.work / scenario_id
@@ -756,6 +826,90 @@ def scenarios(b: Builder) -> list[Scenario]:
         lines, "ReviewRequired", {"payerName": "Trey Research Labs", "remittanceDate": iso(paid), "paymentTotal": float(total(lines)), "paymentReference": ref},
         ["payer:conflicting_payment_line"]))
 
+    # 21 - text report with stacked records: record line, fee / prior-payment lines, net line
+    d = Data(121)
+    paid = date(2026, 10, 26)
+    ref = f"BY-{d.digits(6)}"
+    lines, records = [], []
+    for _ in range(36):
+        pro, gross = d.pro(), d.amount()
+        roll = d.rng.random()
+        if roll < 0.45:
+            modifiers = [("Fuel surcharge", d.amount(5, 160))]
+        elif roll < 0.55:
+            modifiers = [("Claim deduction", -d.amount(1, 40))]
+        elif roll < 0.62:  # a prior payment reversed, a corrected payment, then a surcharge
+            modifiers = [(f"Reversal {d.digits(6)}", -(gross + d.amount(5, 30))), (f"Corrected {d.digits(6)}", d.amount(40, 120)),
+                         ("Fuel surcharge", d.amount(5, 30))]
+        else:
+            modifiers = []
+        net = gross + sum((amount for _, amount in modifiers), Decimal("0.00"))
+        lines.append(Line(pro, net, paid - timedelta(days=d.rng.randint(12, 60)), gross=gross))
+        records.append(f"{pro:<16}Shipment {d.digits(6):<10}{report_money(gross):>14}")
+        records += [f"    {label:<22}{report_money(amount):>14}" for label, amount in modifiers]
+        records.append(f"{'':<46}{report_money(net)}")
+    body = "\r\n".join([
+        "Carrier settlement - Blue Yonder Airlines Cargo",
+        f"Funds for the shipments below were released to your account on {paid:%m/%d/%Y}.",
+        f"Settlement: {ref}",
+        f"Payment Total: {money(total(lines), '$')}",
+        "",
+        f"{'PRO':<16}{'Shipment':<19}{'Base':>11}{'Settled':>12}",
+        "~" * 60,
+        *records,
+        "~" * 60,
+        "Settlement questions: cargo-settlements@blueyonderairlines.example",
+    ])
+    out.append(Scenario(
+        "21-stacked-text-report", "A text report where each payment spans several lines",
+        "Body-only remittance: each payment is a record line (PRO, shipment, base amount), optional surcharge, deduction or "
+        "reversal lines, then a line with the settled amount alone. The settled amount is what was paid; the header states the total.",
+        Message(f"Carrier Settlement {ref}", "Blue Yonder Airlines Cargo Settlements", "cargo-settlements@blueyonderairlines.example",
+                datetime(2026, 10, 26, 7, 45), body_text=body),
+        lines, "Completed", {"payerName": "Blue Yonder Airlines Cargo", "remittanceDate": iso(paid), "paymentTotal": float(total(lines)), "paymentReference": ref}, []))
+
+    # 22 - a legacy Excel 97-2003 workbook named .xlsx
+    d = Data(122)
+    paid = date(2026, 10, 27)
+    lines = d.lines(12, paid)
+    folder = b.folder("22-xls-named-xlsx")
+    ref = f"SV{d.digits(7)}"
+    source = folder / "statement-source.xlsx"
+    remittance_xlsx(source, "Southridge Video", [("Payment Number", ref), ("Payment Date", f"{paid:%m/%d/%Y}"), ("Payment Method", "ACH")],
+                    ["Invoice Number", "Invoice Date", "Amount Paid"], [[l.pro, l.invoice_date.strftime("%m/%d/%Y"), float(l.amount)] for l in lines],
+                    total_row=["Total", "", float(total(lines))])
+    target = folder / f"Payment_Statement_{ref}.xlsx"
+    b.workbooks.append({"source": str(source), "target": str(target), "format": "xls"})
+    out.append(Scenario(
+        "22-xls-named-xlsx", "An Excel 97-2003 (.xls) workbook named .xlsx",
+        "ERP export saved in the legacy binary format under an .xlsx name; the payment date and total are only in the workbook's title block.",
+        Message(f"Payment Statement {ref}", "Southridge Video Accounts Payable", "ap@southridgevideo.example", datetime(2026, 10, 27, 13, 20),
+                body_text="Payment statement attached.\r\n\r\nSouthridge Video Accounts Payable", attachments=[{"path": str(target)}]),
+        lines, "Completed", {"payerName": "Southridge Video", "remittanceDate": iso(paid), "paymentTotal": float(total(lines)), "paymentReference": ref}, []))
+
+    # 23 - paid amounts as formulas, a bare =SUM total with no label, payment date only in the title block
+    d = Data(123)
+    paid = date(2026, 10, 28)
+    folder = b.folder("23-formula-amounts")
+    ref = f"TT-{d.digits(6)}"
+    lines, rows = [], []
+    for index in range(18):
+        pro, units, rate = d.pro(), d.rng.randint(80, 900), Decimal(d.rng.randint(110, 395)) / 100
+        settled = (Decimal(units) * rate).quantize(CENT)  # exact: an integer times a 2-decimal rate
+        lines.append(Line(pro, settled, paid - timedelta(days=d.rng.randint(12, 60))))
+        rows.append((lines[-1].invoice_date, units, float(rate), settled, index % 3 == 1, pro))
+    source = folder / "summary-source.xlsx"
+    payment_summary_xlsx(source, "Tailwind Traders", paid, ref, rows)
+    target = folder / f"Payment_Summary_{ref}.xlsx"
+    b.workbooks.append({"source": str(source), "target": str(target), "format": "xlsx"})
+    out.append(Scenario(
+        "23-formula-amounts", "Spreadsheet with formula amounts and an unlabelled =SUM total",
+        "Every third Settled amount is a formula (=Units*Unit Rate) whose value Excel saved; the table closes with a bare =SUM and a "
+        "labelled repeat of it. The paid-on date is only in the sheet's title block, and the column to use (Settled) sits beside Units and Unit Rate.",
+        Message(f"Payment Summary {ref}", "Tailwind Traders Billing", "billing@tailwindtraders.example", datetime(2026, 10, 28, 10, 5),
+                body_text="Please see the attached payment summary.\r\n\r\nTailwind Traders Billing", attachments=[{"path": str(target)}]),
+        lines, "Completed", {"payerName": "Tailwind Traders", "remittanceDate": iso(paid), "paymentTotal": float(total(lines)), "paymentReference": ref}, []))
+
     return out
 
 
@@ -804,7 +958,7 @@ def write_catalog(out: Path, built: list[Scenario]) -> None:
             "| Sample | Scenario | Lines | Expected |", "|---|---|---|---|"]
     for s in built:
         rows.append(f"| `{s.id}` | {s.summary} | {len(s.lines)} | {s.status}{' - ' + ', '.join(s.issues) if s.issues else ''} |")
-    rows += ["", "Regenerate with `.venv\\Scripts\\python.exe scripts/synthetic_samples/generate.py` (Windows with Outlook).", ""]
+    rows += ["", "Regenerate with `.venv\\Scripts\\python.exe scripts/synthetic_samples/generate.py` (Windows with Outlook and Excel; scenario 22 also needs `xlwt`).", ""]
     (out / "README.md").write_text("\n".join(rows), encoding="utf-8")
 
 
@@ -887,7 +1041,8 @@ def main() -> int:
         shutil.rmtree(work)
     work.mkdir(parents=True)
     builder = Builder(work)
-    built = [s for s in scenarios(builder) if not args.only or s.id in args.only]
+    every = scenarios(builder)
+    built = [s for s in every if not args.only or s.id in args.only]
 
     # 1. images (PNG / TIFF / JPEG) - then wrap the scanned JPEGs into image-only PDFs
     jobs = work / "images.json"
@@ -897,6 +1052,15 @@ def main() -> int:
         pdf = Pdf()
         pdf.image_page(jpeg.read_bytes(), 1275, 1650)
         pdf.save(pdf_path)
+    # 1b. workbooks of the selected scenarios: legacy .xls (xlwt), and formulas saved with their values (Excel)
+    selected = [job for job in builder.workbooks if Path(job["target"]).parent.name in {s.id for s in built}]
+    for job in selected:
+        if job["format"] == "xls":
+            legacy_xls(Path(job["source"]), Path(job["target"]))
+    workbooks = work / "workbooks.json"
+    workbooks.write_text(json.dumps([job for job in selected if job["format"] == "xlsx"]), encoding="utf-8")
+    if any(job["format"] == "xlsx" for job in selected):
+        run_powershell(HERE / "save_workbooks.ps1", workbooks)
 
     # 2. messages, through Outlook
     entries = []
@@ -910,7 +1074,7 @@ def main() -> int:
     manifest = work / "messages.json"
     manifest.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
     run_powershell(HERE / "build_msgs.ps1", manifest)
-    write_catalog(out, built)
+    write_catalog(out, every)  # the whole set, also when --only rebuilt a few
 
     # 3. remove the local Outlook identity, then check every file with the pipeline's parser
     tokens = local_identity()
@@ -920,7 +1084,7 @@ def main() -> int:
     for problem in problems:
         print("PROBLEM:", problem)
     if not problems:
-        for scratch in [jobs, manifest, *work.glob("*.msg")]:
+        for scratch in [jobs, workbooks, manifest, *work.glob("*.msg")]:
             scratch.unlink()
     return 1 if problems else 0
 
