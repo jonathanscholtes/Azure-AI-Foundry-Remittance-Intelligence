@@ -4,7 +4,7 @@
 
 A *golden set* is a set of real remittance messages whose expected output a person has checked. It is how you measure accuracy and catch regressions when the code, the Content Understanding analyzer, the agent instructions or a model version changes.
 
-Keep the golden set in `samples/golden/`, which is git-ignored: **real remittances must never be committed**.
+Keep the golden set **outside the repository**: **real remittances must never be committed**. Set `GOLDEN_DIR` in your `.env` to a local folder (for example `GOLDEN_DIR=C:\data\ach-golden`); it holds the messages, the labels drawn from them, the cached service responses and the reports. Without the setting the script uses `samples/golden/`, which is git-ignored. A folder outside the repository is safer: it can't be committed by a forced `git add`, and it isn't synced with a repository kept in a cloud-synced folder.
 
 ## What it scores
 

@@ -10,7 +10,7 @@ It creates no messages of its own. It picks `.msg` / `.eml` files at random from
 
 ## Before you start
 
-- **Messages.** Point `--source-dir` at a folder of `.msg` / `.eml` files. The repository includes a synthetic set in [samples/synthetic/](../samples/synthetic/README.md): 20 scenarios (body tables, PDF, scanned PDF, image, Excel, a 1,200-line table, short pay, credit memo, several payments, dispute thread, portal link, Spanish, EDI 820, duplicates) with invented companies, PROs and amounts, one `.msg` per subfolder. Regenerate it with `scripts/synthetic_samples/generate.py` (Windows with Outlook). Keep real remittances outside the repository; the rest of `samples/` is git-ignored.
+- **Messages.** Point `--source-dir` at a folder of `.msg` / `.eml` files. The repository includes a synthetic set in [samples/synthetic/](../samples/synthetic/README.md): 23 scenarios (body tables, PDF, scanned PDF, image, Excel, a 1,200-line table, short pay, credit memo, several payments, dispute thread, portal link, Spanish, EDI 820, duplicates, a multi-line text report, a legacy .xls named .xlsx, formula amounts with an unlabelled total) with invented companies, PROs and amounts, one `.msg` per subfolder. Regenerate it with `scripts/synthetic_samples/generate.py` (Windows with Outlook and Excel). Keep real remittances outside the repository; the rest of `samples/` is git-ignored.
 - **Network.** With a private UI (`-PrivateUi`), run the test from a machine that can reach it (for example over the landing-zone VPN).
 - **Capacity.** The default Function plan (`B1`) suits single uploads. For volume, deploy with `-FunctionPlanSku S1` or `P1v3`, and check the `cu-gpt-55` deployment's capacity: it is shared by Content Understanding and two agents. `-MaxConcurrentActivities` (default 8) limits how many activities, and so how many model calls, run at once on each instance.
 - **Python 3.11+.** The script uses only the standard library.
@@ -44,17 +44,17 @@ python test/load/load_test.py --api https://<ui-fqdn> --source-dir <folder> --co
 The synthetic messages sit one per subfolder, so add `--recursive`:
 
 ```powershell
-# Check the selection: all 20 scenarios, no sending
+# Check the selection: all 23 scenarios, no sending
 python test/load/load_test.py --source-dir samples/synthetic --recursive --each-once --dry-run
 
 # Every scenario once, 15 seconds apart (about 5 minutes)
 python test/load/load_test.py --api https://<ui-fqdn> --source-dir samples/synthetic --recursive --each-once --interval-seconds 15 --results test/load/results/synthetic-once.json
 
-# 200 messages drawn at random from the 20 scenarios over 20 minutes, 8 senders
+# 200 messages drawn at random from the 23 scenarios over 20 minutes, 8 senders
 python test/load/load_test.py --api https://<ui-fqdn> --source-dir samples/synthetic --recursive --count 200 --duration-minutes 20 --jitter 0.3 --concurrency 8 --yes
 ```
 
-Each scenario's expected status is in [samples/synthetic/README.md](../samples/synthetic/README.md) (12 complete, 8 go to review), so a run of every scenario once also shows whether each one ended as intended. Repeats in the random run are made unique (`--unique pad`), so every message is processed in full.
+Each scenario's expected status is in [samples/synthetic/README.md](../samples/synthetic/README.md) (15 complete, 8 go to review), so a run of every scenario once also shows whether each one ended as intended. Repeats in the random run are made unique (`--unique pad`), so every message is processed in full.
 
 ## Parameters
 
@@ -105,6 +105,28 @@ With the default `--unique pad`, every send is made unique so it is processed in
 
 Files are reported by a short content hash, never by name, so results can be shared even when the file names are sensitive.
 
+## Metrics by message class
+
+`test/load/load_report.py` reports on exactly the runs a load test sent, read from the API, so earlier runs never mix in. It sends nothing and calls no AI service, so you can re-run it at no cost.
+
+```powershell
+# Send with --results, then report once every run has finished
+python test/load/load_test.py   --api https://<ui-fqdn> --source-dir <folder> --each-once --results test/load/results/run.json
+python test/load/load_report.py --api https://<ui-fqdn> --results test/load/results/run.json --wait --out test/load/results/report.json
+```
+
+It prints five tables, each split by message class (A body table, B spreadsheet, C small document, D large document, none) with a total row:
+
+| Table | Contents |
+|---|---|
+| Run metrics | Messages, outcome (first pass, agent-resolved, review, failed), average lines, p50 / p95 duration, queue wait |
+| Shares | Messages that used any AI, any agent, each agent (Extraction, Resolution, Assurance) and Decision-1, and that need human review |
+| Content Understanding | Billed pages per message and in total, split into *standard* (PDFs, images: one image is one page) and *minimal* (plain text such as email bodies, far cheaper), plus contextualization tokens. Only content CU analyzed counts; rows the table and spreadsheet readers read in code are not pages. |
+| Model tokens | Input, cached, output and reasoning tokens per message, per model |
+| AI cost | Estimated cost per message and in total, cost by component, Content Understanding's share |
+
+Averages are per message, over the messages that recorded usage. Cost is the pipeline's estimate at list prices, not the bill. Use `--ids` to report on runs that weren't sent by a load test. Without `--wait`, unfinished runs are listed and left out; run the report again later to include them.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -117,6 +139,6 @@ Files are reported by a short content hash, never by name, so results can be sha
 
 ## Interpreting results
 
-- The mix of message types follows your folder, not production. Use load tests for **capacity** (does the queue drain, where does throttling start) and real traffic for **cost per message**.
+- The mix of message types follows your folder, not production. Use load tests for **capacity** (does the queue drain, where does throttling start). For **cost per message**, use the per-class figures from `load_report.py`; the overall average is only as representative as your mix of classes.
 - Rising throttle retries with a stable queue mean the model deployment is the limit: raise its capacity or lower `-MaxConcurrentActivities`. A growing queue with no throttling means the Function plan is the limit: scale it up or out.
 - Load-test runs appear in the UI and the ledger like any other run, labelled with the `loadtest` stream.

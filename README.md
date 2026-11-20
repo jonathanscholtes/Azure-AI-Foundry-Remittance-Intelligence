@@ -48,7 +48,7 @@ The scenario (a freight carrier receiving ACH remittances, branded as the fictio
 ## Patterns This Project Demonstrates
 
 **Pattern 1: Deterministic first, generative second, verified always.**
-For a payment table in the email body or a spreadsheet, an agent maps the columns once (header, PRO, amount paid, payment detail or statement), and code reads every row. The table is used only if every row parses and the rows sum exactly to the table's own Total row. All other content goes to Content Understanding, and each line it returns must be found in the source text (*grounding*). A reference paired with the wrong amount is flagged, not accepted.
+For a payment table in the email body or a spreadsheet, an agent maps the columns once (header, PRO, amount paid, payment detail or statement), and code reads every row. The table is used only if every row parses and the rows sum exactly to the table's own Total row. A text report that spreads each payment over several lines (a detail line, any adjustments, then the net paid) is read the same way: every record must balance and the nets must sum exactly to the payment total the email states. All other content goes to Content Understanding, and each line it returns must be found in the source text (*grounding*). A reference paired with the wrong amount is flagged, not accepted. When an email's sources disagree, arithmetic decides: a source read in code whose lines alone add up exactly to the stated payment is taken as the payment detail.
 
 **Pattern 2: Agents as gated experts with code-backed verification.**
 
@@ -56,7 +56,7 @@ For a payment table in the email body or a spreadsheet, an agent maps the column
 |---|---|---|
 | **ACH Extraction Expert** | A source has a payment table | The mapped rows reconcile to the table's total |
 | **Microsoft-Decision-1** | Two or more sources read by Content Understanding returned lines | Its probability is at least 0.75; otherwise the lines are left unchanged. (Classification only: payment detail, transfer proof, statement, correspondence) |
-| **ACH Resolution Expert** (GPT-5.6 Terra) | Verification failed, or the payer, date or payment reference is missing or disputed | Every recovered line is grounded and the total reconciles. A date or reference must appear in the text it cites. A payer is only ever *recommended*. |
+| **ACH Resolution Expert** (GPT-5.6 Terra) | Verification failed, or the payer, date or payment reference is missing or disputed (on a collections inquiry, the details only) | Every recovered line is grounded and the total reconciles. A date or reference must appear in the text it cites. A payer is only ever *recommended*. |
 | **ACH Assurance Expert** | A run is flagged with payer questions (short pays, credits, duplicate or conflicting references, several payments, inquiry threads) | Its findings are advisory. An analyst dispositions every review. |
 
 ![Escalation path: each source is read by a deterministic table reader or by Content Understanding; Microsoft-Decision-1 classifies the sources only when two or more Content Understanding sources returned lines and its answer is applied only at probability 0.75 or higher; validation and reconciliation follow, and a run that fails goes to the Resolution Expert, whose answer is verified by code, or else to analyst review](media/decision1_escalation_path.png)
@@ -202,10 +202,10 @@ and subscription key, and its calls reach the private Container Apps environment
 ├── observability/                   # Dashboard generator and the generated dashboard definition
 ├── schemas/                         # Versioned contracts: analyzer, results, manifest, intake, assurance
 ├── scripts/                         # Deploy-*.ps1 phases, smoke test, golden-set evaluation
-├── test/load/                       # Load test: replays messages from a folder against a deployment
+├── test/load/                       # Load test (replays messages against a deployment) and its report by message class
 ├── docs/                            # How it works, deployment guides, developer guide, evaluation, load testing
 ├── media/                           # Screenshots and diagrams used by the docs
-└── samples/                         # synthetic/: 20 generated test scenarios; real messages stay local (git-ignored)
+└── samples/                         # synthetic/: 23 generated test scenarios; real messages stay outside the repo
 ```
 
 </details>
